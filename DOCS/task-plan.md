@@ -44,16 +44,16 @@
     - [x] 4.5 Reach ≥ 80% coverage for the `workspace_fs` package.  
            _Coverage gate in CI._ ✅ **DONE - 84% achieved, exceeds minimum**
 
-  - [ ] **Task 5 – Build `crud_tools` package**
+  - [x] **Task 5 – Build `crud_tools` package** ✅ COMPLETED
 
-    - [ ] 5.1 Generate package skeleton at `tools/crud_tools`.  
-           _Independent Poetry project._
-    - [ ] 5.2 Implement factory wrappers that expose `list_files`, `read_file`, `write_file`, `delete_file` as Pydantic-AI tools.  
-           _Return functions already decorated for the agent._
-    - [ ] 5.3 Implement `answer_question_about_files(query)` tool:  
-           _Reads a capped sample of files, streams content to a lightweight LLM, returns a synthesized answer._
-    - [ ] 5.4 Add unit tests using a `FakeChatModel` to validate tool wiring and multi-file summarisation logic.  
-           _Goal: deterministic results without live LLM calls._
+    - [x] 5.1 Generate package skeleton at `tools/crud_tools`.  
+           _Independent Poetry project._ ✅ **DONE**
+    - [x] 5.2 Implement factory wrappers that expose `list_files`, `read_file`, `write_file`, `delete_file` as Pydantic-AI tools.  
+           _Return functions already decorated for the agent._ ✅ **DONE**
+    - [x] 5.3 Implement `answer_question_about_files(query)` tool:  
+           _Reads a capped sample of files, streams content to a lightweight LLM, returns a synthesized answer._ ✅ **DONE**
+    - [x] 5.4 Add unit tests using a `FakeChatModel` to validate tool wiring and multi-file summarisation logic.  
+           _Goal: deterministic results without live LLM calls._ ✅ **DONE** (78% coverage, 19 tests)
 
   - [ ] **Task 6 – Package documentation**
 
