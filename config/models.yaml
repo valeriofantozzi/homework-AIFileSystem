@@ -1,0 +1,173 @@
+# Model Configuration for AI File System Agent
+# 
+# This file configures LLM providers and role assignments for different
+# components of the AI agent system. Environment variables are used for
+# API keys to maintain security.
+
+# Provider configurations
+providers:
+  openai:
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    models:
+      fast: "gpt-4o-mini"              # Lightweight model for quick tasks
+      standard: "gpt-4o"               # Standard model for complex reasoning
+      reasoning: "o1-preview"          # Advanced reasoning model
+    default_params:
+      temperature: 0.1
+      max_tokens: 2048
+
+  gemini:
+    api_key: "${GEMINI_API_KEY}"
+    models:
+      fast: "gemini-1.5-flash"         # Fast responses
+      standard: "gemini-1.5-pro"       # Standard capability
+      advanced: "gemini-2.0-flash-exp" # Latest experimental
+    default_params:
+      temperature: 0.1
+      max_output_tokens: 2048
+
+  anthropic:
+    api_key: "${ANTHROPIC_API_KEY}"
+    base_url: "https://api.anthropic.com"
+    models:
+      fast: "claude-3-haiku-20240307"
+      standard: "claude-3-5-sonnet-20241022"
+      advanced: "claude-3-opus-20240229"
+    default_params:
+      temperature: 0.1
+      max_tokens: 2048
+
+  groq:
+    api_key: "${GROQ_API_KEY}"
+    base_url: "https://api.groq.com/openai/v1"
+    models:
+      fast: "llama-3.1-8b-instant"        # Ultra-fast inference
+      standard: "llama-3.1-70b-versatile" # Good balance
+      coding: "deepseek-coder-6.7b-instruct"
+    default_params:
+      temperature: 0.1
+      max_tokens: 2048
+
+  # Local/CLI providers for testing
+  local:
+    gemini_cli:
+      command: "gemini"
+      models:
+        standard: "gemini-2.5-pro"
+      default_params:
+        model: "gemini-2.5-pro"
+    
+    ollama:
+      base_url: "http://localhost:11434/v1"
+      api_key: "not-needed"
+      models:
+        fast: "llama3.2:3b"
+        standard: "llama3.2:8b"
+        coding: "codellama:7b"
+      default_params:
+        temperature: 0.1
+        max_tokens: 2048
+
+# Role-specific model assignments
+# These define which models are used for different purposes
+roles:
+  # Core agent components
+  orchestrator: "openai:fast"      # Safety moderation & intent extraction  
+  agent: "openai:standard"         # Main ReAct reasoning loop
+  
+  # File system operations
+  file_analysis: "gemini:standard" # Analyzing file contents & questions
+  file_summary: "openai:fast"      # Quick file summaries
+  
+  # User interfaces  
+  chat: "anthropic:standard"       # Interactive chat with users
+  cli_chat: "openai:standard"      # CLI-based interactions
+  
+  # Development & testing
+  test_mock: "local:ollama:fast"   # For unit tests
+  development: "groq:fast"         # Fast iteration during dev
+  
+  # Specialized tasks
+  code_review: "anthropic:standard"  # Code analysis
+  documentation: "openai:standard"   # Generating docs
+  debug: "gemini:advanced"          # Complex debugging
+  coding: "groq:coding"             # Code generation
+
+# Environment-specific overrides
+environments:
+  development:
+    # Use fast/cheap models for development
+    default_provider: "groq"
+    roles:
+      agent: "groq:fast"
+      chat: "groq:fast"
+  
+  testing:
+    # Use local models for reliable testing
+    default_provider: "local"
+    roles:
+      orchestrator: "local:ollama:fast"
+      agent: "local:ollama:standard"
+      file_analysis: "local:gemini_cli:standard"
+  
+  production:
+    # Use best models for production
+    default_provider: "openai"
+    # Keep role assignments as defined above
+
+# Manual overrides (uncomment to activate)
+# overrides:
+#   # Cost-saving mode - use fast models everywhere
+#   agent: "openai:fast"
+#   chat: "groq:fast"
+#   file_analysis: "gemini:fast"
+#   
+#   # Local-only mode - no API calls
+#   orchestrator: "local:ollama:fast"
+#   agent: "local:ollama:standard"
+#   file_analysis: "local:gemini_cli:standard"
+
+# Performance and usage limits
+limits:
+  max_tokens: 4096
+  max_files_per_analysis: 20
+  max_content_per_file: 8192
+  request_timeout: 60
+  max_concurrent_requests: 5
+
+# Default fallback configuration
+defaults:
+  provider: "openai"
+  model: "fast"
+  role: "tool"
+
+# Feature flags for experimental features
+features:
+  # Enable advanced reasoning models for complex tasks
+  enable_reasoning_models: false
+  
+  # Enable multi-provider load balancing
+  enable_load_balancing: false
+  
+  # Enable model performance monitoring
+  enable_monitoring: true
+  
+  # Enable automatic model fallback on failures
+  enable_fallback: true
+  
+  # Enable cost optimization (prefer cheaper models)
+  enable_cost_optimization: false
+
+# Logging and monitoring
+logging:
+  log_model_usage: true
+  log_performance_metrics: true
+  log_costs: true
+  
+# Cost tracking (optional)
+cost_tracking:
+  enabled: false
+  budget_alerts:
+    daily_limit: 10.0   # USD
+    monthly_limit: 100.0 # USD

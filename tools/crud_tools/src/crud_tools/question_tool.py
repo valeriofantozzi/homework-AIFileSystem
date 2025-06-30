@@ -3,6 +3,7 @@ Intelligent file analysis tool using LLM integration.
 
 This module provides tools for answering questions about file contents by
 reading multiple files and synthesizing information using a lightweight LLM.
+The LLM model selection is configurable through the centralized model configuration.
 """
 
 from typing import Any
@@ -15,27 +16,36 @@ try:
 except ImportError:
     PYDANTIC_AI_AVAILABLE = False
 
+try:
+    from config import get_model_for_role
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+
 
 async def answer_question_about_files(
     workspace: Workspace,
     query: str,
     max_files: int = 10,
     max_content_per_file: int = 2048,
-    llm_model: str = "openai:gpt-4o-mini",
+    llm_model: str | None = None,
+    role: str = "file_analysis",
     **fs_kwargs: Any
 ) -> str:
     """
     Answer a question about files in the workspace using LLM analysis.
 
     This function reads a sample of files from the workspace and uses an LLM
-    to analyze their contents and answer the user's question.
+    to analyze their contents and answer the user's question. The LLM model
+    is selected based on the configured role assignment.
 
     Args:
         workspace: The workspace instance for secure operations.
         query: The question to answer about the files.
         max_files: Maximum number of files to analyze.
         max_content_per_file: Maximum characters to read from each file.
-        llm_model: The LLM model to use for analysis.
+        llm_model: Override LLM model (if None, uses configured model for role).
+        role: Role-based model selection (default: 'file_analysis').
         **fs_kwargs: Additional arguments for FileSystemTools.
 
     Returns:
@@ -52,6 +62,20 @@ async def answer_question_about_files(
         )
 
     try:
+        # Determine which model to use
+        if llm_model is None:
+            if CONFIG_AVAILABLE:
+                try:
+                    model_provider = get_model_for_role(role)
+                    # For pydantic-ai, we need the provider:model format
+                    llm_model = f"{model_provider.provider_name}:{model_provider.model_name}"
+                except Exception:
+                    # Fallback to default if configuration fails
+                    llm_model = "openai:gpt-4o-mini"
+            else:
+                # Fallback when configuration is not available
+                llm_model = "openai:gpt-4o-mini"
+
         # Create FileSystemTools with size limit for content reading
         fs_tools = FileSystemTools(workspace, **fs_kwargs)
 
@@ -108,12 +132,16 @@ async def answer_question_about_files(
         raise WorkspaceError(f"Failed to analyze files for query '{query}': {e}") from e
 
 
-def create_question_tool_function(workspace: Workspace, **kwargs: Any):
+def create_question_tool_function(workspace: Workspace, role: str = "file_analysis", **kwargs: Any):
     """
     Create a question tool function for manual registration with agents.
+    
+    The created function uses the centralized model configuration to select
+    the appropriate LLM for the specified role.
 
     Args:
         workspace: The workspace instance for secure operations.
+        role: Role-based model selection (default: 'file_analysis').
         **kwargs: Additional arguments for the question tool.
 
     Returns:
@@ -133,6 +161,11 @@ def create_question_tool_function(workspace: Workspace, **kwargs: Any):
         Returns:
             A synthesized answer based on analysis of file contents.
         """
-        return await answer_question_about_files(workspace, query, **kwargs)
+        return await answer_question_about_files(
+            workspace=workspace, 
+            query=query, 
+            role=role,
+            **kwargs
+        )
 
     return question_tool_func
