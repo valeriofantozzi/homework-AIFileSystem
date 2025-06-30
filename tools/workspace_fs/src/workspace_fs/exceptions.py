@@ -45,7 +45,9 @@ class SymlinkError(WorkspaceError):
 class SizeLimitExceeded(WorkspaceError):
     """Raised when file operation exceeds configured size limits."""
 
-    def __init__(self, operation: str, size: int, limit: int, path: str | None = None) -> None:
+    def __init__(
+        self, operation: str, size: int, limit: int, path: str | None = None
+    ) -> None:
         """Initialize size limit error with operation details."""
         message = f"{operation} size {size} bytes exceeds limit of {limit} bytes"
         super().__init__(message, path)

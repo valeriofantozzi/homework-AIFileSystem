@@ -80,7 +80,9 @@ class Workspace:
 
         # Reject paths containing directory separators
         if os.sep in filename or "/" in filename or "\\" in filename:
-            raise ValueError(f"Filename cannot contain directory separators: '{filename}'")
+            raise ValueError(
+                f"Filename cannot contain directory separators: '{filename}'"
+            )
 
         # Reject relative path components
         if filename in {".", ".."} or filename.startswith("."):

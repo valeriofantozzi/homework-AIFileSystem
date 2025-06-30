@@ -1,7 +1,6 @@
 """Basic tests to verify package structure and imports."""
 
 
-
 def test_package_import():
     """Test that the workspace_fs package can be imported."""
     import workspace_fs

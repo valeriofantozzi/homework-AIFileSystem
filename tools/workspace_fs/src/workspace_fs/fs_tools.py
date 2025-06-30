@@ -126,7 +126,7 @@ class FileSystemTools:
 
             for item in self._workspace.root.iterdir():
                 # Skip directories and hidden files
-                if item.is_file() and not item.name.startswith('.'):
+                if item.is_file() and not item.name.startswith("."):
                     try:
                         mtime = item.stat().st_mtime
                         files_with_mtime.append((item.name, mtime))
@@ -178,19 +178,19 @@ class FileSystemTools:
 
         # Read file content
         try:
-            with safe_path.open('r', encoding='utf-8') as f:
+            with safe_path.open("r", encoding="utf-8") as f:
                 return f.read()
         except UnicodeDecodeError:
             # Fallback to latin-1 for binary-like files
             try:
-                with safe_path.open('r', encoding='latin-1') as f:
+                with safe_path.open("r", encoding="latin-1") as f:
                     return f.read()
             except Exception as e:
                 raise WorkspaceError(f"Cannot decode file content: {filename}") from e
         except Exception as e:
             raise WorkspaceError(f"Cannot read file: {filename}") from e
 
-    def write_file(self, filename: str, content: str, mode: str = 'w') -> str:
+    def write_file(self, filename: str, content: str, mode: str = "w") -> str:
         """
         Write content to a file in the workspace.
 
@@ -211,22 +211,24 @@ class FileSystemTools:
         self._check_rate_limit()
 
         # Validate mode
-        valid_modes = ['w', 'a']
+        valid_modes = ["w", "a"]
         if mode not in valid_modes:
             raise InvalidMode(mode, valid_modes)
 
         # Check content size
-        content_bytes = content.encode('utf-8')
+        content_bytes = content.encode("utf-8")
         if len(content_bytes) > self._max_write:
-            raise SizeLimitExceeded("write", len(content_bytes), self._max_write, filename)
+            raise SizeLimitExceeded(
+                "write", len(content_bytes), self._max_write, filename
+            )
 
         safe_path = self._workspace.safe_join(filename)
 
         try:
-            with safe_path.open(mode, encoding='utf-8') as f:
+            with safe_path.open(mode, encoding="utf-8") as f:
                 f.write(content)
 
-            action = "appended" if mode == 'a' else "written"
+            action = "appended" if mode == "a" else "written"
             return f"Content {action} to {filename}"
 
         except Exception as e:

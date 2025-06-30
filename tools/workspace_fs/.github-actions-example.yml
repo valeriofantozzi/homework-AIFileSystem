@@ -1,0 +1,61 @@
+# GitHub Actions workflow for workspace_fs package
+# This file can be used as reference for CI/CD setup
+# Currently configured for local development
+
+name: CI Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths: [ 'tools/workspace_fs/**' ]
+  pull_request:
+    branches: [ main ]
+    paths: [ 'tools/workspace_fs/**' ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.10, 3.11, 3.12]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+        
+    - name: Install dependencies
+      working-directory: tools/workspace_fs
+      run: poetry install
+      
+    - name: Run linting
+      working-directory: tools/workspace_fs  
+      run: |
+        poetry run ruff check .
+        poetry run ruff format --check .
+        
+    - name: Run security analysis
+      working-directory: tools/workspace_fs
+      run: poetry run bandit -r src/
+      
+    - name: Run tests with coverage
+      working-directory: tools/workspace_fs
+      run: |
+        poetry run pytest -v --cov=workspace_fs --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+        
+    - name: Upload coverage reports
+      if: matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v3
+      with:
+        file: tools/workspace_fs/coverage.xml
+        fail_ci_if_error: true
