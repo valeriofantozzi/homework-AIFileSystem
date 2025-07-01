@@ -38,7 +38,7 @@ def get_model_for_role(role: str) -> ModelProvider:
     provider resolution, environment overrides, and API key validation.
     
     Args:
-        role: The role name (e.g., 'file_analysis', 'orchestrator', 'agent')
+        role: The role name (e.g., 'file_analysis', 'supervisor', 'agent')
         
     Returns:
         ModelProvider ready for use with LLM clients

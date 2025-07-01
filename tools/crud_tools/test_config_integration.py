@@ -42,7 +42,7 @@ def test_config_system():
         print(f"✓ Current environment: {config.get_environment()}")
         
         # Test role assignments
-        roles_to_test = ['orchestrator', 'agent', 'file_analysis', 'chat']
+        roles_to_test = ['supervisor', 'agent', 'file_analysis', 'chat']
         
         for role in roles_to_test:
             try:

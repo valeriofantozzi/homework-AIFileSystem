@@ -292,7 +292,7 @@ class ModelConfig:
         Get the configured model provider for a specific role.
         
         Args:
-            role: The role name (e.g., 'orchestrator', 'agent', 'file_analysis')
+            role: The role name (e.g., 'supervisor', 'agent', 'file_analysis')
             
         Returns:
             ModelProvider instance ready for use

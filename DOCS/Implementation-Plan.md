@@ -39,7 +39,7 @@
   - [x] Agent core foundation (`SecureAgent` class)
   - [x] ReAct loop implementation (`ReActLoop` class)
   - [x] Structured logging and comprehensive testing
-- [x] **Task 2**: Design & Implement Orchestrator ✅ **COMPLETED** (2025-07-01)
+- [x] **Task 2**: Design & Implement supervisor ✅ **COMPLETED** (2025-07-01)
   - [x] Lightweight LLM gatekeeper using `gpt-4.1-nano` fast model
   - [x] Intent extraction with structured JSON output and 6 intent types
   - [x] Safety & security layer with content moderation and jailbreak detection
@@ -86,8 +86,8 @@ agent/
 ├── core/
 │   ├── secure_agent.py      # ✅ Main agent orchestration
 │   └── react_loop.py        # ✅ ReAct reasoning implementation
-├── orchestrator/
-│   └── orchestrator_lite.py # ✅ Safety and validation layer
+├── supervisor/
+│   └── supervisor.py # ✅ Safety and validation layer
 └── __init__.py
 
 config/
@@ -149,7 +149,7 @@ tests/
 
 1. **Immediate (Next Sprint)**:
 
-   - Implement `orchestrator_lite.py` for safety validation
+   - Implement `supervisor.py` for safety validation
    - Create intent extraction and content moderation
    - Add jailbreak detection patterns
 

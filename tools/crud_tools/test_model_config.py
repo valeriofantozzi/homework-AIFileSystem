@@ -32,7 +32,7 @@ def test_config_loading():
         print(f"  Available roles: {config.get_available_roles()}")
         
         # Test role-based model selection
-        for role in ["orchestrator", "agent", "file_analysis", "chat"]:
+        for role in ["supervisor", "agent", "file_analysis", "chat"]:
             try:
                 model_provider = config.get_model_for_role(role)
                 print(f"  {role}: {model_provider.provider_name}:{model_provider.model_name}")
@@ -121,7 +121,7 @@ def test_environment_variables():
         from config import get_model_config
         config = get_model_config()
         
-        model_provider = config.get_model_for_role("orchestrator")
+        model_provider = config.get_model_for_role("supervisor")
         params = model_provider.get_client_params()
         
         if params.get("api_key") == "test-key-12345":

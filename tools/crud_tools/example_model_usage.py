@@ -16,20 +16,20 @@ sys.path.insert(0, str(project_root))
 from config import get_model_for_role, set_environment
 
 
-def example_orchestrator():
-    """Example: How the orchestrator component would get its model."""
-    print("=== Orchestrator Component ===")
+def example_supervisor():
+    """Example: How the supervisor component would get its model."""
+    print("=== Supervisor Component ===")
     
     try:
-        model_provider = get_model_for_role('orchestrator')
+        model_provider = get_model_for_role('supervisor')
         client_params = model_provider.get_client_params()
         
-        print(f"Orchestrator using: {model_provider.provider_name}:{model_provider.model_name}")
+        print(f"Supervisor using: {model_provider.provider_name}:{model_provider.model_name}")
         print(f"This is a {client_params.get('model')} model optimized for safety moderation")
         print(f"Temperature: {client_params.get('temperature')} (low for consistency)")
         print()
         
-        # This is how the orchestrator would initialize its LLM client:
+        # This is how the supervisor would initialize its LLM client:
         """
         if model_provider.provider_name == 'openai':
             from openai import AsyncOpenAI
@@ -41,7 +41,7 @@ def example_orchestrator():
         """
         
     except Exception as e:
-        print(f"Error getting orchestrator model: {e}")
+        print(f"Error getting supervisor model: {e}")
 
 
 def example_agent():
@@ -89,7 +89,7 @@ def example_environment_switching():
             set_environment(env)
             
             # Show how models change based on environment
-            roles_to_check = ['orchestrator', 'agent', 'file_analysis']
+            roles_to_check = ['supervisor', 'agent', 'file_analysis']
             
             for role in roles_to_check:
                 try:
@@ -110,7 +110,7 @@ def example_cost_optimization():
     print("\n=== Cost Optimization Example ===")
     
     expensive_roles = ['agent', 'code_review', 'documentation']
-    fast_roles = ['orchestrator', 'file_summary', 'development']
+    fast_roles = ['supervisor', 'file_summary', 'development']
     
     print("High-cost operations (use premium models):")
     for role in expensive_roles:
@@ -134,7 +134,7 @@ def main():
     print("MODEL CONFIGURATION SYSTEM - PRACTICAL EXAMPLES")
     print("=" * 70)
     
-    example_orchestrator()
+    example_supervisor()
     example_agent()
     example_file_analysis()
     example_environment_switching()

@@ -48,7 +48,7 @@ def demonstrate_environment_switching():
             # Show model assignments
             print("🤖 Model assignments:")
             try:
-                roles = ['orchestrator', 'agent', 'file_analysis']
+                roles = ['supervisor', 'agent', 'file_analysis']
                 for role in roles:
                     model = get_model_for_role(role)
                     print(f"   {role}: {model.provider_name}:{model.model_name}")

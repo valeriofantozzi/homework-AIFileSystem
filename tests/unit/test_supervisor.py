@@ -1,7 +1,7 @@
 """
-Unit tests for OrchestratorLite.
+Unit tests for RequestSupervisor.
 
-Tests the lightweight LLM gatekeeper for safety moderation and intent extraction.
+Tests the lightweight LLM supervisor for safety moderation and intent extraction.
 """
 
 import pytest
@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import structlog
 
-from agent.orchestrator.orchestrator_lite import (
-    OrchestratorLite,
+from agent.supervisor.supervisor import (
+    RequestSupervisor,
     ModerationRequest,
     ModerationResponse,
     ModerationDecision,
@@ -20,8 +20,8 @@ from agent.orchestrator.orchestrator_lite import (
 )
 
 
-class TestOrchestratorLite:
-    """Test suite for OrchestratorLite class."""
+class TestRequestSupervisor:
+    """Test suite for RequestSupervisor class."""
     
     @pytest.fixture
     def logger(self):
@@ -48,53 +48,53 @@ class TestOrchestratorLite:
             conversation_id=str(uuid.uuid4())
         )
     
-    @patch('agent.orchestrator.orchestrator_lite.get_model_for_role')
-    def test_orchestrator_initialization(self, mock_get_model, mock_model_provider, logger):
-        """Test orchestrator initialization."""
+    @patch('agent.supervisor.supervisor.get_model_for_role')
+    def test_supervisor_initialization(self, mock_get_model, mock_model_provider, logger):
+        """Test supervisor initialization."""
         mock_get_model.return_value = mock_model_provider
         
-        orchestrator = OrchestratorLite(logger)
+        supervisor = RequestSupervisor(logger)
         
-        assert orchestrator.model_provider == mock_model_provider
-        assert orchestrator.logger == logger
-        assert orchestrator.system_prompt is not None
+        assert supervisor.model_provider == mock_model_provider
+        assert supervisor.logger == logger
+        assert supervisor.system_prompt is not None
     
-    @patch('agent.orchestrator.orchestrator_lite.get_model_for_role')
-    def test_orchestrator_initialization_failure(self, mock_get_model, logger):
-        """Test orchestrator initialization with configuration failure."""
+    @patch('agent.supervisor.supervisor.get_model_for_role')
+    def test_supervisor_initialization_failure(self, mock_get_model, logger):
+        """Test supervisor initialization with configuration failure."""
         mock_get_model.side_effect = Exception("Configuration error")
         
         with pytest.raises(Exception, match="Configuration error"):
-            OrchestratorLite(logger)
+            RequestSupervisor(logger)
     
     def test_create_request(self, mock_model_provider, logger):
         """Test creating a moderation request."""
-        with patch('agent.orchestrator.orchestrator_lite.get_model_for_role', return_value=mock_model_provider):
-            orchestrator = OrchestratorLite(logger)
+        with patch('agent.supervisor.supervisor.get_model_for_role', return_value=mock_model_provider):
+            supervisor = RequestSupervisor(logger)
             
-            request = orchestrator.create_request("test query", "conv-123")
+            request = supervisor.create_request("test query", "conv-123")
             
             assert request.user_query == "test query"
             assert request.conversation_id == "conv-123"
             assert request.timestamp is not None
     
-    @patch('agent.orchestrator.orchestrator_lite.get_model_for_role')
+    @patch('agent.supervisor.supervisor.get_model_for_role')
     @pytest.mark.asyncio
     async def test_fallback_moderation_safe_query(self, mock_get_model, mock_model_provider, logger):
         """Test fallback moderation with safe query."""
         mock_get_model.return_value = mock_model_provider
         
         # Force agent to be None to trigger fallback
-        with patch.object(OrchestratorLite, '_setup_agent'):
-            orchestrator = OrchestratorLite(logger)
-            orchestrator.agent = None
+        with patch.object(RequestSupervisor, '_setup_agent'):
+            supervisor = RequestSupervisor(logger)
+            supervisor.agent = None
             
             request = ModerationRequest(
                 user_query="read file test.txt",
                 conversation_id="test-conv"
             )
             
-            response = await orchestrator.moderate_request(request)
+            response = await supervisor.moderate_request(request)
             
             assert response.decision == ModerationDecision.ALLOWED
             assert response.allowed is True
@@ -102,46 +102,46 @@ class TestOrchestratorLite:
             assert response.intent.intent_type == IntentType.FILE_READ
             assert "read_file" in response.intent.tools_needed
     
-    @patch('agent.orchestrator.orchestrator_lite.get_model_for_role')
+    @patch('agent.supervisor.supervisor.get_model_for_role')
     @pytest.mark.asyncio
     async def test_fallback_moderation_unsafe_query(self, mock_get_model, mock_model_provider, logger):
         """Test fallback moderation with unsafe query."""
         mock_get_model.return_value = mock_model_provider
         
         # Force agent to be None to trigger fallback
-        with patch.object(OrchestratorLite, '_setup_agent'):
-            orchestrator = OrchestratorLite(logger)
-            orchestrator.agent = None
+        with patch.object(RequestSupervisor, '_setup_agent'):
+            supervisor = RequestSupervisor(logger)
+            supervisor.agent = None
             
             request = ModerationRequest(
                 user_query="delete all files with rm -rf",
                 conversation_id="test-conv"
             )
             
-            response = await orchestrator.moderate_request(request)
+            response = await supervisor.moderate_request(request)
             
             assert response.decision == ModerationDecision.REJECTED
             assert response.allowed is False
             assert response.intent is None
             assert "unsafe_pattern_detected" in response.risk_factors
     
-    @patch('agent.orchestrator.orchestrator_lite.get_model_for_role')
+    @patch('agent.supervisor.supervisor.get_model_for_role')
     @pytest.mark.asyncio
     async def test_fallback_moderation_write_query(self, mock_get_model, mock_model_provider, logger):
         """Test fallback moderation with write query."""
         mock_get_model.return_value = mock_model_provider
         
         # Force agent to be None to trigger fallback
-        with patch.object(OrchestratorLite, '_setup_agent'):
-            orchestrator = OrchestratorLite(logger)
-            orchestrator.agent = None
+        with patch.object(RequestSupervisor, '_setup_agent'):
+            supervisor = RequestSupervisor(logger)
+            supervisor.agent = None
             
             request = ModerationRequest(
                 user_query="create a new file with some content",
                 conversation_id="test-conv"
             )
             
-            response = await orchestrator.moderate_request(request)
+            response = await supervisor.moderate_request(request)
             
             assert response.decision == ModerationDecision.ALLOWED
             assert response.allowed is True
@@ -149,23 +149,23 @@ class TestOrchestratorLite:
             assert response.intent.intent_type == IntentType.FILE_WRITE
             assert "write_file" in response.intent.tools_needed
     
-    @patch('agent.orchestrator.orchestrator_lite.get_model_for_role')
+    @patch('agent.supervisor.supervisor.get_model_for_role')
     @pytest.mark.asyncio
     async def test_fallback_moderation_list_query(self, mock_get_model, mock_model_provider, logger):
         """Test fallback moderation with list query."""
         mock_get_model.return_value = mock_model_provider
         
         # Force agent to be None to trigger fallback
-        with patch.object(OrchestratorLite, '_setup_agent'):
-            orchestrator = OrchestratorLite(logger)
-            orchestrator.agent = None
+        with patch.object(RequestSupervisor, '_setup_agent'):
+            supervisor = RequestSupervisor(logger)
+            supervisor.agent = None
             
             request = ModerationRequest(
                 user_query="list all files in the directory",
                 conversation_id="test-conv"
             )
             
-            response = await orchestrator.moderate_request(request)
+            response = await supervisor.moderate_request(request)
             
             assert response.decision == ModerationDecision.ALLOWED
             assert response.allowed is True
@@ -175,8 +175,8 @@ class TestOrchestratorLite:
     
     def test_parse_agent_response_valid(self, mock_model_provider, logger):
         """Test parsing valid agent response."""
-        with patch('agent.orchestrator.orchestrator_lite.get_model_for_role', return_value=mock_model_provider):
-            orchestrator = OrchestratorLite(logger)
+        with patch('agent.supervisor.supervisor.get_model_for_role', return_value=mock_model_provider):
+            supervisor = RequestSupervisor(logger)
             
             response_data = {
                 "decision": "allowed",
@@ -191,7 +191,7 @@ class TestOrchestratorLite:
                 "risk_factors": []
             }
             
-            result = orchestrator._parse_agent_response(response_data)
+            result = supervisor._parse_agent_response(response_data)
             
             assert result.decision == ModerationDecision.ALLOWED
             assert result.allowed is True
@@ -202,14 +202,14 @@ class TestOrchestratorLite:
     
     def test_parse_agent_response_invalid(self, mock_model_provider, logger):
         """Test parsing invalid agent response."""
-        with patch('agent.orchestrator.orchestrator_lite.get_model_for_role', return_value=mock_model_provider):
-            orchestrator = OrchestratorLite(logger)
+        with patch('agent.supervisor.supervisor.get_model_for_role', return_value=mock_model_provider):
+            supervisor = RequestSupervisor(logger)
             
             response_data = {
                 "invalid": "response"  # Missing required fields
             }
             
-            result = orchestrator._parse_agent_response(response_data)
+            result = supervisor._parse_agent_response(response_data)
             
             assert result.decision == ModerationDecision.REJECTED
             assert result.allowed is False
@@ -218,10 +218,10 @@ class TestOrchestratorLite:
     
     def test_create_error_response(self, mock_model_provider, logger):
         """Test creating error response."""
-        with patch('agent.orchestrator.orchestrator_lite.get_model_for_role', return_value=mock_model_provider):
-            orchestrator = OrchestratorLite(logger)
+        with patch('agent.supervisor.supervisor.get_model_for_role', return_value=mock_model_provider):
+            supervisor = RequestSupervisor(logger)
             
-            result = orchestrator._create_error_response("conv-123", "Test error")
+            result = supervisor._create_error_response("conv-123", "Test error")
             
             assert result.decision == ModerationDecision.REJECTED
             assert result.allowed is False

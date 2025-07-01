@@ -3,7 +3,7 @@
 ## Tasks Overview
 
 - **Task 1: Implement Core Agent Logic**
-- **Task 2: Design & Implement Orchestrator**
+- **Task 2: Design & Implement supervisor**
 - **Task 3: Create CLI Chat Interface**
 - **Task 4: Integrate File System Tools**
 - **Task 5: Test Agent Reasoning**
@@ -30,11 +30,11 @@
 **Completed**: 2025-07-01 14:30  
 **Status**: All core agent functionality implemented and tested
 
-### **Task 2 – Design & Implement Orchestrator** ✅ **COMPLETED**
+### **Task 2 – Design & Implement supervisor** ✅ **COMPLETED**
 
 - [x] **2.1 Create lightweight LLM gatekeeper**
-  - [x] Implement `agent/orchestrator/orchestrator_lite.py` using `gpt-4.1-nano` fast model
-  - [x] Connect to model configuration system to use the 'orchestrator' role
+  - [x] Implement `agent/supervisor/supervisor.py` using `gpt-4.1-nano` fast model
+  - [x] Connect to model configuration system to use the 'supervisor' role
   - [x] Add prompt validation to check for unsafe requests with fallback logic
 - [x] **2.2 Implement intent extraction**
   - [x] Design structured output format (JSON) with `IntentData` model for extracted intent
@@ -46,7 +46,7 @@
   - [x] Create allow/deny decision mechanism with clear explanations
 
 **Completed**: 2025-07-01 15:20  
-**Status**: Complete orchestrator with 11 unit tests (100% pass rate)
+**Status**: Complete supervisor with 11 unit tests (100% pass rate)
 
 ### **Task 3 – Create CLI Chat Interface**
 

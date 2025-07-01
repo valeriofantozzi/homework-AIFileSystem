@@ -96,7 +96,7 @@ This project implements a flexible configuration system for managing API keys an
 - **Multiple Environment Support**: Development, testing, production, and local environments
 - **Secure API Key Management**: Environment-specific `.env` files with template-based setup
 - **Provider Flexibility**: Support for OpenAI, Anthropic, Gemini, Groq, and local models
-- **Role-Based Model Assignment**: Different models for agent, orchestrator, file analysis, and chat roles
+- **Role-Based Model Assignment**: Different models for agent, supervisor, file analysis, and chat roles
 
 ### Quick Setup
 

@@ -1,9 +1,9 @@
 """
-Lightweight orchestrator for request filtering and routing.
+Request supervisor for safety moderation and intent extraction.
 
-This module implements a lightweight LLM gatekeeper that performs safety moderation
+This module implements a lightweight LLM supervisor that performs safety moderation
 and intent extraction before requests are passed to the main agent. It uses a
-smaller, faster model for efficient processing.
+smaller, faster model for efficient processing and maintains oversight of all requests.
 """
 import json
 import logging
@@ -75,34 +75,34 @@ class ModerationResponse(BaseModel):
         }
 
 
-class OrchestratorLite:
+class RequestSupervisor:
     """
-    Lightweight LLM gatekeeper for safety moderation and intent extraction.
+    Lightweight LLM supervisor for safety moderation and intent extraction.
     
-    This class uses a smaller, faster model to perform initial safety checks
-    and intent extraction before passing requests to the main agent. It provides
-    structured output for downstream processing.
+    This class supervises incoming requests, ensuring they meet safety criteria
+    and extracting actionable intent before delegating to the main agent.
+    Maintains single responsibility: request oversight and validation.
     """
     
     def __init__(self, logger: Optional[structlog.BoundLogger] = None):
         """
-        Initialize the orchestrator.
+        Initialize the request supervisor.
         
         Args:
-            logger: Optional structured logger for debugging
+            logger: Optional structured logger for supervision activities
         """
         self.logger = logger or structlog.get_logger(__name__)
         
-        # Get model configuration for orchestrator role
+        # Get model configuration for supervisor role
         try:
-            self.model_provider = get_model_for_role('orchestrator')
-            self.logger.info("Orchestrator initialized", 
+            self.model_provider = get_model_for_role('supervisor')
+            self.logger.info("Request supervisor initialized", 
                            model=f"{self.model_provider.provider_name}:{self.model_provider.model_name}")
         except Exception as e:
-            self.logger.error("Failed to initialize orchestrator model", error=str(e))
+            self.logger.error("Failed to initialize supervisor model", error=str(e))
             raise
             
-        # Initialize the agent
+        # Initialize the supervision agent
         self.system_prompt = self._get_system_prompt()
         self._setup_agent()
     
@@ -138,10 +138,10 @@ class OrchestratorLite:
             self.logger.error("Failed to setup pydantic-ai agent", error=str(e))
             # Fall back to a basic implementation
             self.agent = None
-    
+
     def _get_system_prompt(self) -> str:
         """Get the system prompt for safety moderation and intent extraction."""
-        return """You are a safety moderator and intent extraction system for an AI file system agent.
+        return """You are a safety supervisor and intent extraction system for an AI file system agent.
 
 Your task is to analyze user queries and determine:
 1. Whether the request is safe and within scope
@@ -190,36 +190,33 @@ Be conservative with safety but helpful with legitimate requests."""
 
     async def moderate_request(self, request: ModerationRequest) -> ModerationResponse:
         """
-        Moderate a user request for safety and extract intent.
+        Supervise a user request for safety compliance and intent extraction.
+        
+        This method performs the core supervision duties:
+        - Safety validation against policy violations
+        - Intent extraction for downstream processing 
+        - Risk assessment and mitigation
         
         Args:
-            request: The moderation request
+            request: The supervision request
             
         Returns:
-            ModerationResponse with decision and extracted intent
+            ModerationResponse with supervision decision and extracted intent
         """
-        self.logger.info("Processing moderation request", 
+        self.logger.info("Supervising request", 
                         conversation_id=request.conversation_id,
                         query_length=len(request.user_query))
         
         try:
-            if self.agent is None:
-                # Fallback to simple rule-based moderation
+            # If agent is not available, fall back to rule-based moderation
+            if not self.agent:
+                self.logger.warning("Agent unavailable, using fallback moderation")
                 return self._fallback_moderation(request)
             
-            # Create the user prompt for moderation
-            user_prompt = f"""Please moderate this user request and extract intent:
-
-User Query: "{request.user_query}"
-
-Analyze this request for:
-1. Safety (detect harmful, malicious, or out-of-scope requests)
-2. Intent (what does the user want to do?)
-3. Required tools and parameters
-
-Respond with the exact JSON format specified in the system prompt."""
-
-            # Run the agent to get moderation decision
+            # Create user prompt
+            user_prompt = f"User query: {request.user_query}"
+            
+            # Process through AI agent
             result = await self.agent.run(user_prompt)
             
             # Parse the response
@@ -246,7 +243,7 @@ Respond with the exact JSON format specified in the system prompt."""
             # Create structured response
             moderation_response = self._parse_agent_response(response_data)
             
-            self.logger.info("Moderation completed",
+            self.logger.info("Supervision completed",
                            conversation_id=request.conversation_id,
                            decision=moderation_response.decision.value,
                            allowed=moderation_response.allowed)
@@ -254,12 +251,12 @@ Respond with the exact JSON format specified in the system prompt."""
             return moderation_response
             
         except Exception as e:
-            self.logger.error("Moderation failed", 
+            self.logger.error("Supervision failed", 
                             conversation_id=request.conversation_id,
                             error=str(e))
             
             return self._create_error_response(request.conversation_id, str(e))
-    
+
     def _fallback_moderation(self, request: ModerationRequest) -> ModerationResponse:
         """
         Fallback moderation using simple rules when AI agent is unavailable.
@@ -324,23 +321,23 @@ Respond with the exact JSON format specified in the system prompt."""
             reason="Basic rule-based moderation passed",
             risk_factors=[]
         )
-    
+
     def _create_error_response(self, conversation_id: str, error_msg: str) -> ModerationResponse:
         """Create a safe error response."""
         return ModerationResponse(
             decision=ModerationDecision.REJECTED,
             allowed=False,
             intent=None,
-            reason=f"Moderation system error: {error_msg}",
+            reason=f"Supervision system error: {error_msg}",
             risk_factors=["system_error"]
         )
-    
+
     def _parse_agent_response(self, response_data: Dict[str, Any]) -> ModerationResponse:
         """
-        Parse and validate the agent's response.
+        Parse agent response into structured ModerationResponse.
         
         Args:
-            response_data: Raw response from the agent
+            response_data: Raw response data from the agent
             
         Returns:
             Structured ModerationResponse
@@ -348,23 +345,29 @@ Respond with the exact JSON format specified in the system prompt."""
         try:
             # Extract decision
             decision_str = response_data.get("decision", "rejected")
-            decision = ModerationDecision(decision_str)
+            try:
+                decision = ModerationDecision(decision_str)
+            except ValueError:
+                decision = ModerationDecision.REJECTED
             
-            # Extract allowed flag
             allowed = response_data.get("allowed", False)
             
             # Extract intent if present
             intent = None
-            if allowed and response_data.get("intent"):
+            if response_data.get("intent"):
                 intent_data = response_data["intent"]
-                intent = IntentData(
-                    intent_type=IntentType(intent_data.get("intent_type", "unknown")),
-                    confidence=float(intent_data.get("confidence", 0.0)),
-                    parameters=intent_data.get("parameters", {}),
-                    tools_needed=intent_data.get("tools_needed", [])
-                )
+                try:
+                    intent = IntentData(
+                        intent_type=IntentType(intent_data.get("intent_type", "unknown")),
+                        confidence=intent_data.get("confidence", 0.0),
+                        parameters=intent_data.get("parameters", {}),
+                        tools_needed=intent_data.get("tools_needed", [])
+                    )
+                except (ValueError, TypeError) as e:
+                    # If intent parsing fails, log and continue without intent
+                    self.logger.warning("Failed to parse intent", error=str(e))
+                    intent = None
             
-            # Extract reason and risk factors
             reason = response_data.get("reason", "No reason provided")
             risk_factors = response_data.get("risk_factors", [])
             
@@ -387,7 +390,7 @@ Respond with the exact JSON format specified in the system prompt."""
                 reason=f"Invalid response format: {str(e)}",
                 risk_factors=["parsing_error"]
             )
-    
+
     def create_request(self, user_query: str, conversation_id: str) -> ModerationRequest:
         """
         Create a moderation request.
@@ -397,7 +400,7 @@ Respond with the exact JSON format specified in the system prompt."""
             conversation_id: Unique conversation identifier
             
         Returns:
-            ModerationRequest ready for processing
+            ModerationRequest object
         """
         return ModerationRequest(
             user_query=user_query,

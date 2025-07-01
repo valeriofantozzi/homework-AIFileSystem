@@ -132,7 +132,7 @@
 
 - Multi-environment support: local, development, testing, production
 - Multi-provider flexibility: OpenAI, Anthropic, Gemini, Groq, local models
-- Role-based model assignment: agent, orchestrator, file_analysis, chat
+- Role-based model assignment: agent, supervisor, file_analysis, chat
 - Secure API key management: Environment-specific templates and validation
 - Developer-friendly tooling: CLI for setup, validation, and management
 

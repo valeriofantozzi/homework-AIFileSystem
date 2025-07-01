@@ -73,7 +73,7 @@ providers:
 # These define which models are used for different purposes
 roles:
   # Core agent components
-  orchestrator: "openai:fast"      # Safety moderation & intent extraction  
+  supervisor: "openai:fast"      # Safety moderation & intent extraction  
   agent: "openai:standard"         # Main ReAct reasoning loop
   
   # File system operations
@@ -107,7 +107,7 @@ environments:
     # Use local models for reliable testing
     default_provider: "local"
     roles:
-      orchestrator: "local:ollama:fast"
+      supervisor: "local:ollama:fast"
       agent: "local:ollama:standard"
       file_analysis: "local:gemini_cli:standard"
   
@@ -124,7 +124,7 @@ environments:
 #   file_analysis: "gemini:fast"
 #   
 #   # Local-only mode - no API calls
-#   orchestrator: "local:ollama:fast"
+#   supervisor: "local:ollama:fast"
 #   agent: "local:ollama:standard"
 #   file_analysis: "local:gemini_cli:standard"
 
