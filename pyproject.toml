@@ -1,0 +1,62 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "ai-file-system"
+version = "0.1.0"
+description = "AI Agent for secure file system operations with MCP integration"
+authors = ["Valerio Fantozzi <valerio@example.com>"]
+readme = "README.md"
+packages = [
+    {include = "agent"},
+    {include = "chat_interface"},
+    {include = "config"},
+    {include = "server"},
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic-ai = "^0.0.14"
+pydantic = "^2.0.0"
+structlog = "^24.1.0"
+rich = "^13.7.0"
+fastapi = "^0.108.0"
+uvicorn = "^0.25.0"
+pyyaml = "^6.0.1"
+httpx = "^0.27.2"
+
+# Local packages
+workspace-fs = {path = "tools/workspace_fs", develop = true}
+crud-tools = {path = "tools/crud_tools", develop = true}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+pytest-asyncio = "^0.21.0"
+ruff = "^0.1.9"
+black = "^23.12.0"
+mypy = "^1.8.0"
+
+[tool.poetry.scripts]
+ai-fs-chat = "chat_interface.cli_chat:main"
+ai-fs-server = "server.api_mcp:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL"]
+ignore = ["E501", "PLR0913", "PLR0912"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=agent --cov=config --cov-report=html --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
