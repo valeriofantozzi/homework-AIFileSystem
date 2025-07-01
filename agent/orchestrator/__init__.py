@@ -1,10 +1,24 @@
 """
 Lightweight LLM gatekeeper for safety moderation and intent extraction.
 
-OrchestratorLite uses a smaller model (gpt-4o-mini) to perform initial
+OrchestratorLite uses a smaller model (openai:fast) to perform initial
 safety checks and intent extraction before passing to the main agent.
 """
 
-# TODO: Implement lightweight LLM gatekeeper
-# TODO: Safety moderation and intent extraction
-# TODO: Return JSON with {allowed, intent, args}
+from .orchestrator_lite import (
+    OrchestratorLite,
+    ModerationRequest,
+    ModerationResponse,
+    ModerationDecision,
+    IntentType,
+    IntentData
+)
+
+__all__ = [
+    "OrchestratorLite",
+    "ModerationRequest", 
+    "ModerationResponse",
+    "ModerationDecision",
+    "IntentType",
+    "IntentData"
+]
