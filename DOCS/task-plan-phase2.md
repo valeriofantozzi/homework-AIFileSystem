@@ -1,0 +1,126 @@
+# Phase 2 – Agent Implementation & Planning Loop
+
+## Tasks Overview
+
+- **Task 1: Implement Core Agent Logic**
+- **Task 2: Design & Implement Orchestrator**
+- **Task 3: Create CLI Chat Interface**
+- **Task 4: Integrate File System Tools**
+- **Task 5: Test Agent Reasoning**
+- **Task 6: Implement Bonus Features**
+- **Task 7: Documentation & Diagnostics**
+
+## Detailed Task Breakdown
+
+### **Task 1 – Implement Core Agent Logic**
+
+- [ ] **1.1 Create agent core foundation**
+  - [ ] Implement `agent/core/secure_agent.py` with `SecureAgent` class using Pydantic-AI
+  - [ ] Add configuration for model selection via config system
+  - [ ] Design tool registration mechanism for pluggable capabilities
+- [ ] **1.2 Design & implement ReAct loop**
+  - [ ] Create `agent/core/react_loop.py` with a robust Reasoning-Action-Observation loop
+  - [ ] Implement scratchpad management to track reasoning steps
+  - [ ] Add structured thought process with distinct THINK, ACT, and OBSERVE phases
+- [ ] **1.3 Implement structured logging for agent activities**
+  - [ ] Create conversation context tracking with unique IDs
+  - [ ] Add detailed logging for each ReAct step (thoughts, actions, observations)
+  - [ ] Implement debug mode to expose full reasoning process
+
+### **Task 2 – Design & Implement Orchestrator**
+
+- [ ] **2.1 Create lightweight LLM gatekeeper**
+  - [ ] Implement `agent/orchestrator/orchestrator_lite.py` using a smaller, faster model
+  - [ ] Connect to model configuration system to use the 'orchestrator' role
+  - [ ] Add prompt validation to check for unsafe requests
+- [ ] **2.2 Implement intent extraction**
+  - [ ] Design structured output format (JSON) for extracted intent
+  - [ ] Parse user queries to determine required tools and parameters
+  - [ ] Add error handling for malformed or ambiguous requests
+- [ ] **2.3 Build safety & security layer**
+  - [ ] Add content moderation to detect and reject harmful prompts
+  - [ ] Implement jailbreak detection patterns
+  - [ ] Create allow/deny decision mechanism with explanation
+
+### **Task 3 – Create CLI Chat Interface**
+
+- [ ] **3.1 Design command-line interface**
+  - [ ] Implement `chat_interface/cli_chat/chat.py` for terminal-based interaction
+  - [ ] Add colorized output for different message types (user, agent, tools)
+  - [ ] Create clean, readable format for multi-turn conversations
+- [ ] **3.2 Add conversation management**
+  - [ ] Implement conversation history tracking
+  - [ ] Add session persistence between runs
+  - [ ] Create command history and navigation
+- [ ] **3.3 Implement debug features**
+  - [ ] Add `--debug` flag to expose reasoning process
+  - [ ] Create commands to inspect workspace state
+  - [ ] Implement tool execution tracing
+
+### **Task 4 – Integrate File System Tools**
+
+- [ ] **4.1 Connect crud_tools to agent**
+  - [ ] Register the five required file system tools with the agent
+  - [ ] Add proper error handling and formatting for tool results
+  - [ ] Create sandbox initialization at agent startup
+- [ ] **4.2 Implement tool chaining**
+  - [ ] Enable agent to use multiple tools in sequence
+  - [ ] Add temporary memory for tool outputs
+  - [ ] Implement output parsing between tool calls
+- [ ] **4.3 Add advanced file operations**
+  - [ ] Create helper functions for common operations like "read newest file"
+  - [ ] Implement pattern matching for file selection
+  - [ ] Add file metadata extraction capabilities
+
+### **Task 5 – Test Agent Reasoning**
+
+- [ ] **5.1 Create test framework for agents**
+  - [ ] Implement `FakeChatModel` for deterministic testing
+  - [ ] Add conversation fixtures with expected responses
+  - [ ] Create mock tool responses for predictable testing
+- [ ] **5.2 Build reasoning pattern tests**
+  - [ ] Test multi-step reasoning scenarios
+  - [ ] Verify tool chaining logic
+  - [ ] Test failure recovery and graceful degradation
+- [ ] **5.3 Implement integration tests**
+  - [ ] Create end-to-end tests with example scenarios
+  - [ ] Verify file operation sequences
+  - [ ] Test conversation continuity across multiple interactions
+
+### **Task 6 – Implement Bonus Features**
+
+- [ ] **6.1 Create advanced safety features**
+  - [ ] Implement rejection explanations for unsafe requests
+  - [ ] Add content filtering for responses
+  - [ ] Create fallback responses for edge cases
+- [ ] **6.2 Implement lightweight model for prompt rejection**
+  - [ ] Configure two-phase processing with different models
+  - [ ] Create fast rejection path using small model
+  - [ ] Implement model fallback mechanism
+- [ ] **6.3 Add structured error handling**
+  - [ ] Create custom error types for different failure modes
+  - [ ] Implement user-friendly error messages
+  - [ ] Add recovery suggestions for common errors
+
+### **Task 7 – Documentation & Diagnostics**
+
+- [ ] **7.1 Create agent documentation**
+  - [ ] Document agent architecture and components
+  - [ ] Add usage examples and patterns
+  - [ ] Create troubleshooting guide
+- [ ] **7.2 Implement diagnostic tools**
+  - [ ] Add detailed logging options
+  - [ ] Create performance tracking
+  - [ ] Implement usage statistics
+- [ ] **7.3 Add example conversation scripts**
+  - [ ] Create sample conversations demonstrating key capabilities
+  - [ ] Add automated test cases from examples
+  - [ ] Document expected behavior for various queries
+
+## Success Criteria
+
+- Agent successfully processes multi-step operations like "read the newest file"
+- CLI interface provides clear, readable conversation flow
+- Safety mechanisms prevent harmful or out-of-scope requests
+- Test suite demonstrates reliable reasoning with ≥80% coverage
+- Documentation provides clear usage guidance and examples
