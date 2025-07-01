@@ -55,20 +55,38 @@
     - [x] 5.4 Add unit tests using a `FakeChatModel` to validate tool wiring and multi-file summarisation logic.  
            _Goal: deterministic results without live LLM calls._ ✅ **DONE** (78% coverage, 19 tests)
 
-  - [ ] **Task 6 – Package documentation**
+  - [x] **Task 6 – Package documentation** ✅ COMPLETED
 
-    - [ ] 6.1 Write a README for each package with usage examples and the public API.  
+    - [x] 6.1 Write a README for each package with usage examples and the public API.  
            _Audience: other developers who may reuse the library._
-    - [ ] 6.2 Add an initial CHANGELOG (`v0.1.0 – first stable release`).  
+    - [x] 6.2 Add an initial CHANGELOG (`v0.1.0 – first stable release`).  
            _Sets precedent for semantic versioning._
 
-  - [ ] **Task 7 – Repository wiring**
-    - [ ] 7.1 Declare editable path dependencies for both packages in the root `pyproject.toml` (or `requirements.txt`).  
+  - [x] **Task 7 – Repository wiring** ✅ COMPLETED
+
+    - [x] 7.1 Declare editable path dependencies for both packages in the root `pyproject.toml` (or `requirements.txt`).  
            _Enables one-shot installation of the entire repo._
-    - [ ] 7.2 Update `agent/__init__.py` to import and register the five tools for later phases.  
+    - [x] 7.2 Update `agent/__init__.py` to import and register the five tools for later phases.  
            _Ensures the agent sees them without extra glue code later._
-    - [ ] 7.3 Create `scripts/smoke_fs.py`: writes, reads, deletes a file and prints results.  
+    - [x] 7.3 Create `scripts/smoke_fs.py`: writes, reads, deletes a file and prints results.  
            _Quick manual sanity check for reviewers._
+
+  - [x] **Task 8 – Environment & Model Configuration System** ✅ COMPLETED
+
+    - [x] 8.1 Design and implement centralized configuration system (`config/model_config.py`, `config/env_loader.py`).  
+           _Goal: Support multiple providers, roles, and environments with clean separation of concerns._ ✅ **DONE**
+    - [x] 8.2 Create comprehensive environment templates (`.env.*.template` files) for all deployment contexts.  
+           _Goal: Secure, developer-friendly setup with no secrets in version control._ ✅ **DONE**
+    - [x] 8.3 Implement CLI tool (`config/manage_env.py`) for environment setup, validation, and management.  
+           _Goal: Simple onboarding and configuration validation workflow._ ✅ **DONE**
+    - [x] 8.4 Add YAML-based model configuration (`config/models.yaml`) with provider capabilities.  
+           _Goal: Flexible model assignment and easy provider switching._ ✅ **DONE**
+    - [x] 8.5 Create demonstration script (`config/demo_env_system.py`) and setup documentation (`config/ENV_SETUP.md`).  
+           _Goal: Clear examples and comprehensive user guidance._ ✅ **DONE**
+    - [x] 8.6 Update `.gitignore` to protect sensitive files while allowing templates.  
+           _Goal: Security by default with developer convenience._ ✅ **DONE**
+    - [x] 8.7 Validate end-to-end configuration loading, environment switching, and API key management.  
+           _Goal: Ensure robust operation across all environments and providers._ ✅ **DONE**
 
 ---
 
@@ -77,10 +95,18 @@
 **✅ COMPLETED:**
 
 - **Phase 1 – File-system & Core Tools** (100%)
+
   - All 4 tasks and 19 subtasks completed
   - 84% test coverage achieved (exceeds 80% minimum)
   - Production-ready `workspace_fs` package with full CRUD operations
   - Comprehensive security controls (path traversal, symlinks, rate limits, size limits)
+
+- **Environment & Model Configuration System** (100%)
+  - All 7 subtasks completed
+  - Centralized configuration system with multi-provider support
+  - Secure environment management with template-based setup
+  - CLI tooling for easy configuration management
+  - Comprehensive documentation and demonstration examples
 
 **🔄 IN PROGRESS:**
 
@@ -92,7 +118,7 @@
 - **Task 6**: Package documentation (READMEs, CHANGELOGs)
 - **Task 7**: Repository wiring (dependencies, agent integration, smoke tests)
 
-## 🏗️ Architecture Status
+\*\*🏗️ Architecture Status
 
 **✅ Foundation Layer Ready:**
 
@@ -102,5 +128,13 @@
 - Security-first: Comprehensive protection against common attacks
 - Test coverage: 84% with 39 test cases covering all scenarios
 
+**✅ Configuration System Ready:**
+
+- Multi-environment support: local, development, testing, production
+- Multi-provider flexibility: OpenAI, Anthropic, Gemini, Groq, local models
+- Role-based model assignment: agent, orchestrator, file_analysis, chat
+- Secure API key management: Environment-specific templates and validation
+- Developer-friendly tooling: CLI for setup, validation, and management
+
 **🎯 Ready for Integration:**
-The `workspace_fs` package is production-ready and can support higher-level abstractions for the agent system.
+Both the `workspace_fs` package and configuration system are production-ready and provide a solid foundation for the agent system architecture.
