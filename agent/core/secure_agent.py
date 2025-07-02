@@ -8,6 +8,7 @@ can interact with file system tools while maintaining security constraints.
 
 import json
 import os
+import re
 import sys
 import uuid
 from datetime import datetime
@@ -27,6 +28,135 @@ from crud_tools import create_file_tools, answer_question_about_files
 from workspace_fs import Workspace
 
 from .react_loop import ReActLoop
+
+
+class ToolResultFormatter:
+    """Enhanced formatting for tool results to improve readability and error handling."""
+    
+    @staticmethod
+    def format_success_result(tool_name: str, result: Any, execution_time: float = None) -> str:
+        """Format a successful tool execution result."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        time_info = f" ({execution_time:.2f}s)" if execution_time else ""
+        
+        if tool_name == "list_files":
+            if isinstance(result, list):
+                count = len(result)
+                files_str = "\n".join(f"  - {file}" for file in result[:10])  # Show first 10
+                if count > 10:
+                    files_str += f"\n  ... and {count - 10} more files"
+                return f"✅ Found {count} files{time_info}:\n{files_str}"
+            else:
+                return f"✅ Files{time_info}:\n{str(result)}"
+        
+        elif tool_name == "read_file":
+            content_len = len(str(result))
+            lines = len(str(result).split('\n'))
+            return f"✅ Read file{time_info} ({content_len} chars, {lines} lines):\n{str(result)}"
+        
+        elif tool_name == "write_file":
+            return f"✅ File operation completed{time_info}: {str(result)}"
+        
+        elif tool_name == "delete_file":
+            return f"✅ File deleted{time_info}: {str(result)}"
+        
+        elif tool_name in ["get_file_info", "find_files_by_pattern", "read_newest_file"]:
+            return f"✅ {tool_name.replace('_', ' ').title()}{time_info}:\n{str(result)}"
+        
+        else:
+            return f"✅ {tool_name}{time_info}: {str(result)}"
+    
+    @staticmethod
+    def format_error_result(tool_name: str, error: Exception, execution_time: float = None) -> str:
+        """Format a tool execution error with helpful context."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        time_info = f" ({execution_time:.2f}s)" if execution_time else ""
+        error_type = type(error).__name__
+        
+        # Provide helpful suggestions based on error type
+        suggestions = {
+            "FileNotFoundError": "Try listing files first to see what's available.",
+            "PermissionError": "Check if the file exists and is accessible.",
+            "ValueError": "Check if the arguments are valid.",
+            "OSError": "There may be a filesystem issue.",
+        }
+        
+        suggestion = suggestions.get(error_type, "Review the tool arguments and try again.")
+        
+        return (f"❌ {tool_name} failed{time_info} ({error_type}):\n"
+                f"Error: {str(error)}\n"
+                f"Suggestion: {suggestion}")
+    
+    @staticmethod
+    def format_validation_error(tool_name: str, validation_message: str) -> str:
+        """Format validation errors with clear guidance."""
+        return (f"⚠️  {tool_name} validation failed:\n"
+                f"{validation_message}\n"
+                f"Please check the tool arguments and try again.")
+
+
+class SandboxValidator:
+    """Validates sandbox initialization and security constraints."""
+    
+    @staticmethod
+    def validate_workspace(workspace_path: str) -> Dict[str, Any]:
+        """Validate workspace directory and return status information."""
+        result = {
+            "valid": False,
+            "path": workspace_path,
+            "exists": False,
+            "readable": False,
+            "writable": False,
+            "file_count": 0,
+            "total_size": 0,
+            "errors": []
+        }
+        
+        try:
+            path = Path(workspace_path)
+            
+            # Check if path exists
+            if not path.exists():
+                result["errors"].append(f"Workspace path does not exist: {workspace_path}")
+                return result
+            result["exists"] = True
+            
+            # Check if it's a directory
+            if not path.is_dir():
+                result["errors"].append(f"Workspace path is not a directory: {workspace_path}")
+                return result
+            
+            # Check read permissions
+            try:
+                list(path.iterdir())
+                result["readable"] = True
+            except PermissionError:
+                result["errors"].append("Cannot read workspace directory")
+            
+            # Check write permissions
+            try:
+                test_file = path / ".test_write_access"
+                test_file.touch()
+                test_file.unlink()
+                result["writable"] = True
+            except PermissionError:
+                result["errors"].append("Cannot write to workspace directory")
+            
+            # Count files and calculate size
+            try:
+                files = list(path.glob("*"))
+                result["file_count"] = len([f for f in files if f.is_file()])
+                result["total_size"] = sum(f.stat().st_size for f in files if f.is_file())
+            except Exception as e:
+                result["errors"].append(f"Error analyzing workspace contents: {str(e)}")
+            
+            # Mark as valid if no critical errors
+            result["valid"] = result["exists"] and result["readable"] and result["writable"]
+            
+        except Exception as e:
+            result["errors"].append(f"Unexpected error validating workspace: {str(e)}")
+        
+        return result
 
 
 class ConversationContext(BaseModel):
@@ -73,7 +203,7 @@ class SecureAgent:
         **fs_kwargs: Any
     ) -> None:
         """
-        Initialize the SecureAgent.
+        Initialize the SecureAgent with enhanced validation and formatting.
         
         Args:
             workspace_path: Path to the secure workspace directory
@@ -85,6 +215,19 @@ class SecureAgent:
         self.debug_mode = debug_mode
         self.logger = structlog.get_logger(__name__)
         
+        # Enhanced sandbox validation (Task 4.1)
+        self.sandbox_status = SandboxValidator.validate_workspace(workspace_path)
+        if not self.sandbox_status["valid"]:
+            error_msg = f"Sandbox validation failed: {'; '.join(self.sandbox_status['errors'])}"
+            self.logger.error("Sandbox validation failed", errors=self.sandbox_status["errors"])
+            raise ValueError(error_msg)
+        
+        self.logger.info(
+            "Sandbox validated successfully",
+            file_count=self.sandbox_status["file_count"],
+            total_size=self.sandbox_status["total_size"]
+        )
+        
         # Initialize model configuration
         self.model_config = model_config or ModelConfig()
         
@@ -94,8 +237,8 @@ class SecureAgent:
         # Initialize workspace
         self.workspace = Workspace(workspace_path)
         
-        # Create basic file system tools
-        self.file_tools = create_file_tools(self.workspace, **fs_kwargs)
+        # Create basic file system tools with enhanced error handling
+        self.file_tools = self._create_enhanced_file_tools(**fs_kwargs)
         
         # Add the intelligent question answering tool
         async def answer_question_tool(query: str) -> str:
@@ -254,38 +397,58 @@ Always explain your reasoning and what tools you're using."""
             )
     
     def _add_advanced_file_operations(self) -> None:
-        """Add advanced file operations for Task 4.3."""
+        """Add advanced file operations for Task 4.3 with enhanced capabilities."""
+        import time
         
         def read_newest_file() -> str:
             """Read the content of the most recently modified file."""
+            start_time = time.time()
             try:
-                files = self.file_tools["list_files"]()
+                # Get raw tools instead of enhanced ones to avoid formatting conflicts
+                raw_tools = create_file_tools(self.workspace)
+                files = raw_tools["list_files"]()
+                
                 if not files:
                     return "No files found in workspace"
                 
                 # list_files returns a list of files sorted by modification time (newest first)
                 if isinstance(files, list) and files:
                     newest_file = files[0]
-                    content = self.file_tools["read_file"](newest_file)
-                    return f"Content of newest file '{newest_file}':\n{content}"
+                    content = raw_tools["read_file"](newest_file)
+                    execution_time = time.time() - start_time
+                    return ToolResultFormatter.format_success_result(
+                        "read_newest_file", 
+                        f"Content of newest file '{newest_file}':\n{content}",
+                        execution_time
+                    )
                 elif isinstance(files, str) and files.strip():
                     # Handle string format (fallback)
                     file_list = files.strip().split('\n')
                     if file_list and file_list[0]:
                         newest_file = file_list[0]
-                        content = self.file_tools["read_file"](newest_file)
-                        return f"Content of newest file '{newest_file}':\n{content}"
+                        content = raw_tools["read_file"](newest_file)
+                        execution_time = time.time() - start_time
+                        return ToolResultFormatter.format_success_result(
+                            "read_newest_file",
+                            f"Content of newest file '{newest_file}':\n{content}",
+                            execution_time
+                        )
                     else:
                         return "No files found in workspace"
                 else:
                     return "No files found in workspace"
             except Exception as e:
-                return f"Error reading newest file: {str(e)}"
+                execution_time = time.time() - start_time
+                return ToolResultFormatter.format_error_result("read_newest_file", e, execution_time)
         
-        def find_files_by_pattern(pattern: str) -> str:
-            """Find files matching a pattern (simple substring match)."""
+        def find_files_by_pattern(pattern: str, use_regex: bool = False) -> str:
+            """Find files matching a pattern with optional regex support."""
+            start_time = time.time()
             try:
-                files = self.file_tools["list_files"]()
+                # Get raw tools to avoid formatting conflicts
+                raw_tools = create_file_tools(self.workspace)
+                files = raw_tools["list_files"]()
+                
                 if not files:
                     return "No files found in workspace"
                 
@@ -297,17 +460,38 @@ Always explain your reasoning and what tools you're using."""
                 else:
                     return "No files found in workspace"
                 
-                matching_files = [f for f in file_list if f and pattern.lower() in f.lower()]
+                matching_files = []
+                
+                if use_regex:
+                    try:
+                        regex_pattern = re.compile(pattern, re.IGNORECASE)
+                        matching_files = [f for f in file_list if f and regex_pattern.search(f)]
+                    except re.error as regex_err:
+                        return ToolResultFormatter.format_validation_error(
+                            "find_files_by_pattern",
+                            f"Invalid regex pattern '{pattern}': {str(regex_err)}"
+                        )
+                else:
+                    # Simple substring match
+                    matching_files = [f for f in file_list if f and pattern.lower() in f.lower()]
+                
+                execution_time = time.time() - start_time
                 
                 if matching_files:
-                    return f"Files matching pattern '{pattern}':\n" + '\n'.join(matching_files)
+                    result = f"Files matching pattern '{pattern}':\n" + '\n'.join(f"  - {f}" for f in matching_files)
+                    return ToolResultFormatter.format_success_result(
+                        "find_files_by_pattern", result, execution_time
+                    )
                 else:
                     return f"No files found matching pattern '{pattern}'"
+                    
             except Exception as e:
-                return f"Error finding files by pattern: {str(e)}"
+                execution_time = time.time() - start_time
+                return ToolResultFormatter.format_error_result("find_files_by_pattern", e, execution_time)
         
         def get_file_info(filename: str) -> str:
-            """Get metadata information about a file."""
+            """Get comprehensive metadata information about a file."""
+            start_time = time.time()
             try:
                 import os
                 file_path = os.path.join(self.workspace_path, filename)
@@ -315,37 +499,131 @@ Always explain your reasoning and what tools you're using."""
                 if not os.path.exists(file_path) or not os.path.isfile(file_path):
                     return f"File '{filename}' not found"
                 
-                # Get basic file metadata
+                # Get comprehensive file metadata
                 stat = os.stat(file_path)
                 size = stat.st_size
                 modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Try to get content preview
+                # Try to get content preview using raw tools
                 try:
-                    content = self.file_tools["read_file"](filename)
+                    raw_tools = create_file_tools(self.workspace)
+                    content = raw_tools["read_file"](filename)
                     lines = len(content.split('\n'))
-                    preview = content[:200] + "..." if len(content) > 200 else content
+                    words = len(content.split())
+                    preview = content[:300] + "..." if len(content) > 300 else content
                 except Exception:
                     lines = "unknown"
+                    words = "unknown"
                     preview = "Cannot read content"
                 
-                return (f"File: {filename}\n"
-                       f"Size: {size} bytes\n"
-                       f"Modified: {modified}\n"
-                       f"Lines: {lines}\n"
-                       f"Preview:\n{preview}")
+                # Get file extension info
+                file_ext = Path(filename).suffix.lower()
+                file_type = {
+                    '.txt': 'Text file',
+                    '.md': 'Markdown file',
+                    '.py': 'Python script',
+                    '.json': 'JSON data',
+                    '.csv': 'CSV data',
+                    '.log': 'Log file'
+                }.get(file_ext, f'{file_ext} file' if file_ext else 'File without extension')
+                
+                execution_time = time.time() - start_time
+                
+                result = (f"File: {filename}\n"
+                         f"Type: {file_type}\n"
+                         f"Size: {size:,} bytes\n"
+                         f"Created: {created}\n"
+                         f"Modified: {modified}\n"
+                         f"Lines: {lines}\n"
+                         f"Words: {words}\n"
+                         f"Preview:\n{preview}")
+                
+                return ToolResultFormatter.format_success_result("get_file_info", result, execution_time)
+                
             except Exception as e:
-                return f"Error getting file info for '{filename}': {str(e)}"
+                execution_time = time.time() - start_time
+                return ToolResultFormatter.format_error_result("get_file_info", e, execution_time)
         
-        # Add advanced operations to tools
+        def find_largest_file() -> str:
+            """Find the largest file in the workspace."""
+            start_time = time.time()
+            try:
+                # Get raw tools to avoid formatting conflicts
+                raw_tools = create_file_tools(self.workspace)
+                files = raw_tools["list_files"]()
+                
+                if not files:
+                    return "No files found in workspace"
+                
+                file_list = files if isinstance(files, list) else files.strip().split('\n')
+                largest_file = None
+                largest_size = 0
+                
+                for filename in file_list:
+                    if filename:
+                        try:
+                            file_path = os.path.join(self.workspace_path, filename)
+                            size = os.path.getsize(file_path)
+                            if size > largest_size:
+                                largest_size = size
+                                largest_file = filename
+                        except Exception:
+                            continue
+                
+                execution_time = time.time() - start_time
+                
+                if largest_file:
+                    result = f"Largest file: {largest_file} ({largest_size:,} bytes)"
+                    return ToolResultFormatter.format_success_result("find_largest_file", result, execution_time)
+                else:
+                    return "No accessible files found"
+                    
+            except Exception as e:
+                execution_time = time.time() - start_time
+                return ToolResultFormatter.format_error_result("find_largest_file", e, execution_time)
+        
+        def find_files_by_extension(extension: str) -> str:
+            """Find all files with a specific extension."""
+            start_time = time.time()
+            try:
+                # Get raw tools to avoid formatting conflicts
+                raw_tools = create_file_tools(self.workspace)
+                files = raw_tools["list_files"]()
+                
+                if not files:
+                    return "No files found in workspace"
+                
+                file_list = files if isinstance(files, list) else files.strip().split('\n')
+                ext = extension.lower() if not extension.startswith('.') else extension.lower()
+                if not ext.startswith('.'):
+                    ext = '.' + ext
+                
+                matching_files = [f for f in file_list if f and f.lower().endswith(ext)]
+                
+                execution_time = time.time() - start_time
+                
+                if matching_files:
+                    result = f"Files with extension '{ext}':\n" + '\n'.join(f"  - {f}" for f in matching_files)
+                    return ToolResultFormatter.format_success_result("find_files_by_extension", result, execution_time)
+                else:
+                    return f"No files found with extension '{ext}'"
+                    
+            except Exception as e:
+                execution_time = time.time() - start_time
+                return ToolResultFormatter.format_error_result("find_files_by_extension", e, execution_time)
+        
+        # Add all advanced operations to tools
         self.file_tools["read_newest_file"] = read_newest_file
         self.file_tools["find_files_by_pattern"] = find_files_by_pattern
         self.file_tools["get_file_info"] = get_file_info
+        self.file_tools["find_largest_file"] = find_largest_file
+        self.file_tools["find_files_by_extension"] = find_files_by_extension
     
     def get_available_tools(self) -> List[str]:
         """Get list of available tool names."""
         return [
-            # Core CRUD operations
+            # Core CRUD operations (Task 4.1)
             "list_files", 
             "read_file", 
             "write_file", 
@@ -354,7 +632,9 @@ Always explain your reasoning and what tools you're using."""
             # Advanced operations (Task 4.3)
             "read_newest_file",
             "find_files_by_pattern", 
-            "get_file_info"
+            "get_file_info",
+            "find_largest_file",
+            "find_files_by_extension"
         ]
     
     def get_workspace_info(self) -> Dict[str, Any]:
@@ -365,3 +645,62 @@ Always explain your reasoning and what tools you're using."""
             "model": f"{self.model_provider.provider_name}:{self.model_provider.model_name}",
             "debug_mode": self.debug_mode
         }
+    
+    def _create_enhanced_file_tools(self, **fs_kwargs: Any) -> Dict[str, Any]:
+        """Create file system tools with enhanced error handling and formatting."""
+        import time
+        
+        # Get basic tools
+        basic_tools = create_file_tools(self.workspace, **fs_kwargs)
+        enhanced_tools = {}
+        
+        # Wrap each tool with enhanced error handling and formatting
+        for tool_name, tool_func in basic_tools.items():
+            def create_enhanced_wrapper(name: str, func: callable):
+                def enhanced_wrapper(*args, **kwargs):
+                    start_time = time.time()
+                    try:
+                        # Execute the original tool function
+                        result = func(*args, **kwargs)
+                        execution_time = time.time() - start_time
+                        
+                        # Format successful result
+                        formatted_result = ToolResultFormatter.format_success_result(
+                            name, result, execution_time
+                        )
+                        
+                        if self.debug_mode:
+                            self.logger.debug(
+                                "Tool executed successfully",
+                                tool=name,
+                                args=args,
+                                kwargs=kwargs,
+                                execution_time=execution_time
+                            )
+                        
+                        return formatted_result
+                        
+                    except Exception as e:
+                        execution_time = time.time() - start_time
+                        
+                        # Format error result
+                        formatted_error = ToolResultFormatter.format_error_result(
+                            name, e, execution_time
+                        )
+                        
+                        self.logger.error(
+                            "Tool execution failed",
+                            tool=name,
+                            args=args,
+                            kwargs=kwargs,
+                            error=str(e),
+                            execution_time=execution_time
+                        )
+                        
+                        return formatted_error
+                
+                return enhanced_wrapper
+            
+            enhanced_tools[tool_name] = create_enhanced_wrapper(tool_name, tool_func)
+        
+        return enhanced_tools

@@ -125,8 +125,37 @@ async def answer_question_about_files(
         )
 
         # Get response from LLM
-        result = await analysis_agent.run(prompt)
-        return result.output
+        try:
+            result = await analysis_agent.run(prompt)
+            return result.output
+        except Exception as llm_error:
+            # If the primary model fails (e.g., missing API key), try fallback
+            error_msg = str(llm_error).lower()
+            if any(keyword in error_msg for keyword in ['api key', 'authentication', 'key', 'unauthorized']):
+                # Try fallback to OpenAI if primary model fails due to API key issues
+                if llm_model != "openai:gpt-4o-mini":
+                    try:
+                        fallback_agent = Agent(
+                            model="openai:gpt-4o-mini",
+                            system_prompt=(
+                                "You are a helpful assistant that analyzes file contents and "
+                                "answers questions about them. You will be given the contents "
+                                "of multiple files and a question. Provide a concise, accurate "
+                                "answer based on the file contents. If the files don't contain "
+                                "relevant information, say so clearly."
+                            ),
+                        )
+                        fallback_result = await fallback_agent.run(prompt)
+                        return f"[Using fallback model due to {llm_model.split(':')[0]} API key issue] {fallback_result.output}"
+                    except Exception:
+                        # If fallback also fails, return informative error
+                        return f"Unable to analyze files: {llm_model.split(':')[0]} API key not configured and OpenAI fallback also failed. Please configure API keys or use local models."
+                else:
+                    # Already using OpenAI, no fallback available
+                    return f"Unable to analyze files: OpenAI API key not configured. Please set OPENAI_API_KEY environment variable."
+            else:
+                # Re-raise non-API-key related errors
+                raise llm_error
 
     except Exception as e:
         raise WorkspaceError(f"Failed to analyze files for query '{query}': {e}") from e

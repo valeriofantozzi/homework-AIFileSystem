@@ -18,7 +18,18 @@ from config.model_config import ModelProvider
 
 
 class ReActPhase(Enum):
-    """Phases of the ReAct reasoning loop."""
+    """Phases        # Check for "largest" file multi-step operations
+        if "largest" in query_lower or "biggest" in query_lower:
+            actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
+            if len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
+                # We listed files, now need to find the largest
+                return True
+            elif len(actions_taken) == 2 and actions_taken[-1].tool_name == "find_largest_file":
+                # We found the largest file, continue if user wants to read it
+                if "read" in query_lower or "content" in query_lower or "what" in query_lower:
+                    return True
+                return False  # Just wanted to know the largest file
+            return len(actions_taken) < 3  # Allow up to 3 steps for this queryct reasoning loop."""
     THINK = "think"
     ACT = "act"
     OBSERVE = "observe"
@@ -38,6 +49,42 @@ class ReActStep:
 
 
 @dataclass
+class ToolChainContext:
+    """Enhanced context for tool chaining with better memory management."""
+    tool_outputs: Dict[str, Any] = field(default_factory=dict)
+    file_context: Dict[str, str] = field(default_factory=dict)  # filename -> content cache
+    discovered_files: List[str] = field(default_factory=list)
+    operation_history: List[str] = field(default_factory=list)
+    
+    def add_tool_output(self, tool_name: str, output: Any) -> None:
+        """Add tool output to context for future reference."""
+        self.tool_outputs[tool_name] = output
+        self.operation_history.append(f"{tool_name}: {str(output)[:100]}...")
+    
+    def get_recent_files(self) -> List[str]:
+        """Get recently discovered files."""
+        return self.discovered_files[-10:]  # Last 10 files
+    
+    def cache_file_content(self, filename: str, content: str) -> None:
+        """Cache file content for efficient access."""
+        self.file_context[filename] = content
+    
+    def get_cached_content(self, filename: str) -> Optional[str]:
+        """Get cached file content if available."""
+        return self.file_context.get(filename)
+    
+    def get_context_summary(self) -> str:
+        """Get a summary of the current context for reasoning."""
+        summary = []
+        if self.discovered_files:
+            summary.append(f"Files discovered: {', '.join(self.get_recent_files())}")
+        if self.tool_outputs:
+            recent_tools = list(self.tool_outputs.keys())[-3:]  # Last 3 tools
+            summary.append(f"Recent tools used: {', '.join(recent_tools)}")
+        return "; ".join(summary) if summary else "No context available"
+
+
+@dataclass
 class ReActResult:
     """Result from a complete ReAct reasoning loop."""
     response: str
@@ -45,6 +92,7 @@ class ReActResult:
     reasoning_steps: List[Dict[str, Any]] = field(default_factory=list)
     success: bool = True
     iterations: int = 0
+    tool_chain_context: Optional[ToolChainContext] = None
 
 
 class ReActLoop:
@@ -369,8 +417,31 @@ Think about whether I have enough information to answer the user's question or i
         # Check for multi-step operations first
         actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
         
+        # Handle "largest" file queries (multi-step: list → find_largest → read)
+        if ("largest" in query_lower or "biggest" in query_lower):
+            if len(actions_taken) == 0:
+                # First step: list files to see what's available
+                return {"tool": "list_files", "args": {}}
+            elif len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
+                # Second step: find the largest file
+                return {"tool": "find_largest_file", "args": {}}
+            elif len(actions_taken) == 2 and actions_taken[-1].tool_name == "find_largest_file":
+                # Third step: read the largest file if requested
+                if "read" in query_lower or "content" in query_lower or "what" in query_lower:
+                    # Extract filename from the find_largest_file result
+                    largest_result = actions_taken[-1].tool_result
+                    if largest_result and largest_result.strip():
+                        # Parse the formatted result to extract filename
+                        # Expected format: "✅ Largest file: filename.txt (123 bytes) (0.00s)"
+                        import re
+                        filename_match = re.search(r'Largest file:\s*([^\s(]+)', largest_result)
+                        if filename_match:
+                            filename = filename_match.group(1)
+                            return {"tool": "read_file", "args": {"filename": filename}}
+                return None  # Just wanted to know the largest file
+        
         # If this is a multi-step request ("first X, then Y"), continue with next step
-        if ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
+        elif ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
             if len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
                 # We did list_files, now check if we need to read something
                 if "read" in query_lower:
@@ -486,6 +557,18 @@ Think about whether I have enough information to answer the user's question or i
             if len(actions_taken) == 1 and ("list" in query_lower and "read" in query_lower):
                 return True
         
+        # Check for "largest" file multi-step operations
+        if "largest" in query_lower or "biggest" in query_lower:
+            actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
+            if len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
+                # We listed files, now need to find the largest
+                return True
+            elif len(actions_taken) == 2 and actions_taken[-1].tool_name == "find_largest_file":
+                # We found the largest file, continue if user wants to read it
+                if "read" in query_lower or "content" in query_lower or "what" in query_lower:
+                    return True
+                return False  # Just wanted to know the largest, we're done
+        
         # Check if we've done too many iterations of the same action
         recent_actions = [step for step in self.scratchpad[-4:] if step.phase == ReActPhase.ACT]
         if len(recent_actions) >= 3:
@@ -567,9 +650,25 @@ Think about whether I have enough information to answer the user's question or i
                 result = action.tool_result
                 
                 if tool_name == "list_files":
-                    file_count = len(result.split('\n')) if result else 0
-                    response_parts.append(f"• Listed {file_count} files in the workspace")
-                    if result:
+                    # Parse file count from formatted result
+                    if "Found 0 files" in result:
+                        file_count = 0
+                        response_parts.append("• Found no files in the workspace (empty)")
+                    elif "Found" in result and "files" in result:
+                        # Extract count from "Found X files" pattern
+                        import re
+                        match = re.search(r'Found (\d+) files', result)
+                        if match:
+                            file_count = int(match.group(1))
+                            response_parts.append(f"• Listed {file_count} files in the workspace")
+                        else:
+                            file_count = len(result.split('\n')) if result else 0
+                            response_parts.append(f"• Listed files in the workspace")
+                    else:
+                        file_count = len(result.split('\n')) if result else 0
+                        response_parts.append(f"• Listed files in the workspace")
+                    
+                    if result and file_count > 0:
                         response_parts.append(f"  Files: {result}")
                 
                 elif tool_name == "read_file":
@@ -608,6 +707,11 @@ Think about whether I have enough information to answer the user's question or i
                 elif tool_name == "get_file_info":
                     filename = action.tool_args.get('filename', 'unknown') if action.tool_args else 'unknown'
                     response_parts.append(f"• Got information for file '{filename}'")
+                    if result:
+                        response_parts.append(f"  Result: {result}")
+                
+                elif tool_name == "find_largest_file":
+                    response_parts.append(f"• Found largest file in workspace")
                     if result:
                         response_parts.append(f"  Result: {result}")
                 
