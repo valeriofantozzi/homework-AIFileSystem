@@ -7,6 +7,7 @@ This guide helps you diagnose and resolve common issues with the AI File System 
 ### System Health Check
 
 Run this command to verify your setup:
+
 ```bash
 poetry run python -c "
 from config.env_loader import EnvLoader
@@ -52,6 +53,7 @@ asyncio.run(test())
 ### Poetry Installation Problems
 
 **Problem:** `poetry: command not found`
+
 ```bash
 # Install Poetry
 curl -sSL https://install.python-poetry.org | python3 -
@@ -64,6 +66,7 @@ source ~/.zshrc
 ```
 
 **Problem:** `poetry install` fails with dependency conflicts
+
 ```bash
 # Clear poetry cache
 poetry cache clear pypi --all
@@ -77,6 +80,7 @@ poetry install
 ```
 
 **Problem:** Python version compatibility
+
 ```bash
 # Check Python version
 python3 --version
@@ -93,6 +97,7 @@ poetry install
 ### Package Installation Issues
 
 **Problem:** Missing system dependencies
+
 ```bash
 # macOS
 brew install pkg-config libffi
@@ -111,6 +116,7 @@ poetry install
 **Problem:** `Invalid API key` or `Authentication failed`
 
 **Diagnosis:**
+
 ```bash
 # Check if .env.local exists
 ls -la config/env/.env.local
@@ -120,13 +126,16 @@ grep -c "API_KEY" config/env/.env.local
 ```
 
 **Solutions:**
+
 1. **Missing configuration file:**
+
    ```bash
    cp config/env/.env.example config/env/.env.local
    # Edit with your API keys
    ```
 
 2. **Invalid key format:**
+
    ```bash
    # OpenAI keys start with 'sk-'
    # Anthropic keys start with 'sk-ant-'
@@ -134,6 +143,7 @@ grep -c "API_KEY" config/env/.env.local
    ```
 
 3. **Key verification:**
+
    ```bash
    # Test OpenAI key
    curl -H "Authorization: Bearer YOUR_OPENAI_KEY" \
@@ -149,7 +159,9 @@ grep -c "API_KEY" config/env/.env.local
 **Problem:** `Model 'gpt-4o' not available`
 
 **Solutions:**
+
 1. **Check model availability:**
+
    ```bash
    # Edit config/models.yaml
    roles:
@@ -158,12 +170,13 @@ grep -c "API_KEY" config/env/.env.local
    ```
 
 2. **Use alternative models:**
+
    ```yaml
    # Budget-friendly configuration
    roles:
      agent: "gpt-3.5-turbo"
      supervisor: "gpt-3.5-turbo"
-   
+
    # Anthropic alternative
    roles:
      agent: "claude-3-sonnet"
@@ -185,6 +198,7 @@ print(f'Config path: {env.config_path}')
 ```
 
 **Solutions:**
+
 1. **File location:** Ensure `.env.local` is in `config/env/`
 2. **File format:** Use `KEY=value` format (no spaces around =)
 3. **Permissions:** Ensure file is readable (`chmod 644`)
@@ -196,13 +210,16 @@ print(f'Config path: {env.config_path}')
 **Problem:** Agent takes >30 seconds to respond
 
 **Diagnosis:**
+
 ```bash
 # Enable debug mode to see timing
 poetry run python -m chat_interface.cli_chat.chat --debug
 ```
 
 **Solutions:**
+
 1. **Model optimization:**
+
    ```yaml
    # Use faster models
    roles:
@@ -211,6 +228,7 @@ poetry run python -m chat_interface.cli_chat.chat --debug
    ```
 
 2. **Network issues:**
+
    ```bash
    # Test API connectivity
    curl -w "@curl-format.txt" -s -o /dev/null https://api.openai.com/v1/models
@@ -227,7 +245,9 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 **Problem:** `MemoryError` or system becomes unresponsive
 
 **Solutions:**
+
 1. **Restart session:**
+
    ```bash
    # Exit and restart the chat interface
    Ctrl+C
@@ -235,6 +255,7 @@ poetry run python -m chat_interface.cli_chat.chat --debug
    ```
 
 2. **Process large files in chunks:**
+
    ```
    You: Show me the first 100 lines of large_file.txt
    # Instead of reading entire file
@@ -251,12 +272,15 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 **Problem:** Agent "forgets" earlier conversation
 
 **Causes:**
+
 - Context window limits exceeded
 - Session restart
 - Model limitations
 
 **Solutions:**
+
 1. **Summarize important context:**
+
    ```
    You: Based on our earlier discussion about the sales data, now show me...
    ```
@@ -275,19 +299,23 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 **Problem:** Agent rejects legitimate requests
 
 **Example:**
+
 ```
 You: Delete old backup files
 Agent: I cannot help with file deletion as it may be unsafe.
 ```
 
 **Solutions:**
+
 1. **Rephrase requests:**
+
    ```
    # Instead of: "Delete all backup files"
    # Try: "Help me clean up .bak files that are older than 30 days"
    ```
 
 2. **Be specific:**
+
    ```
    # Instead of: "Remove everything"
    # Try: "Remove the file named temp_data.txt"
@@ -306,12 +334,15 @@ Agent: I cannot help with file deletion as it may be unsafe.
 **Cause:** Trying to access files outside the sandbox
 
 **Solutions:**
+
 1. **Check workspace location:**
+
    ```bash
    poetry run python -m tools.workspace_fs.workspace status
    ```
 
 2. **Copy files to workspace:**
+
    ```bash
    # Copy external files to workspace
    cp /path/to/external/file ./workspace/
@@ -329,7 +360,9 @@ Agent: I cannot help with file deletion as it may be unsafe.
 **Problem:** `ToolExecutionError` during file operations
 
 **Common Causes:**
+
 1. **Permission issues:**
+
    ```bash
    # Check workspace permissions
    ls -la workspace/
@@ -337,6 +370,7 @@ Agent: I cannot help with file deletion as it may be unsafe.
    ```
 
 2. **File locks:**
+
    ```bash
    # Close files in other applications
    # Or restart if files are locked
@@ -353,13 +387,16 @@ Agent: I cannot help with file deletion as it may be unsafe.
 **Problem:** `UnicodeDecodeError` when reading files
 
 **Solutions:**
+
 1. **File encoding detection:**
+
    ```bash
    file -I filename.txt
    # Shows encoding information
    ```
 
 2. **Convert file encoding:**
+
    ```bash
    iconv -f ISO-8859-1 -t UTF-8 input.txt > output.txt
    ```
@@ -371,7 +408,9 @@ Agent: I cannot help with file deletion as it may be unsafe.
 ### Optimization Strategies
 
 **Slow File Operations:**
+
 1. **Large file handling:**
+
    ```
    # Instead of: "Read entire 100MB file"
    # Use: "Show first 50 lines of large_file.txt"
@@ -384,6 +423,7 @@ Agent: I cannot help with file deletion as it may be unsafe.
    ```
 
 **API Rate Limiting:**
+
 ```bash
 # If you hit rate limits, wait or switch models
 # Configure retries in models.yaml:
@@ -398,6 +438,7 @@ models:
 ### Debug Mode
 
 **Enable comprehensive logging:**
+
 ```bash
 export AGENT_DEBUG=true
 export LOG_LEVEL=DEBUG
@@ -405,6 +446,7 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 ```
 
 **Debug output interpretation:**
+
 ```
 [SUPERVISOR] Analyzing query: "list files"
 [SUPERVISOR] Intent: list, Safety: SAFE
@@ -416,6 +458,7 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 ### Log Analysis
 
 **Check logs for errors:**
+
 ```bash
 # Recent logs
 tail -n 50 logs/agent.log
@@ -430,6 +473,7 @@ grep -i "took\|time" logs/agent.log
 ### Manual Testing
 
 **Test individual components:**
+
 ```bash
 # Test supervisor
 poetry run python -c "
@@ -454,18 +498,19 @@ print(result)
 
 ### Common Error Codes
 
-| Error Type | Code | Description | Solution |
-|------------|------|-------------|----------|
-| `ConfigurationError` | CFG001 | Missing API key | Add key to .env.local |
-| `SecurityError` | SEC001 | Unsafe request | Rephrase query |
-| `ToolError` | TL001 | File not found | Check file path |
-| `ToolError` | TL002 | Permission denied | Check file permissions |
-| `WorkspaceBoundaryError` | WS001 | Path outside workspace | Use workspace files only |
-| `ModelError` | MDL001 | Model unavailable | Switch to available model |
+| Error Type               | Code   | Description            | Solution                  |
+| ------------------------ | ------ | ---------------------- | ------------------------- |
+| `ConfigurationError`     | CFG001 | Missing API key        | Add key to .env.local     |
+| `SecurityError`          | SEC001 | Unsafe request         | Rephrase query            |
+| `ToolError`              | TL001  | File not found         | Check file path           |
+| `ToolError`              | TL002  | Permission denied      | Check file permissions    |
+| `WorkspaceBoundaryError` | WS001  | Path outside workspace | Use workspace files only  |
+| `ModelError`             | MDL001 | Model unavailable      | Switch to available model |
 
 ### Error Message Patterns
 
 **Configuration Errors:**
+
 ```
 ❌ "Environment file not found"
 → Create config/env/.env.local
@@ -478,6 +523,7 @@ print(result)
 ```
 
 **Runtime Errors:**
+
 ```
 ❌ "Request rejected by supervisor"
 → Rephrase request more specifically
@@ -518,6 +564,7 @@ poetry run python -m chat_interface.cli_chat.chat
 ### Data Recovery
 
 **If workspace is corrupted:**
+
 ```bash
 # Check backup location
 ls -la workspace_backup/

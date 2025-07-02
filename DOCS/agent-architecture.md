@@ -57,9 +57,11 @@ The AI File System Agent implements a sophisticated, multi-layered architecture 
 ### 1. Agent Core (`agent/core/`)
 
 #### SecureAgent (`secure_agent.py`)
+
 The main reasoning engine that orchestrates all agent operations.
 
 **Key Responsibilities:**
+
 - Primary conversation management
 - Tool registration and execution
 - Response generation and formatting
@@ -67,6 +69,7 @@ The main reasoning engine that orchestrates all agent operations.
 - Error handling and recovery
 
 **Architecture:**
+
 ```python
 class SecureAgent:
     def __init__(self, config: AgentConfig):
@@ -74,26 +77,29 @@ class SecureAgent:
         self.model = config.main_model
         self.tools = self._register_tools()
         self.conversation_context = ConversationContext()
-    
+
     async def process_query(self, query: str) -> AgentResponse:
         # 1. Security check via supervisor
         intent = await self.supervisor.analyze_intent(query)
         if not intent.is_safe:
             return self._create_rejection_response(intent.reason)
-        
+
         # 2. Execute ReAct reasoning loop
         return await self.react_loop.execute(query, intent)
 ```
 
 #### ReAct Loop (`react_loop.py`)
+
 Implements the Reasoning-Action-Observation cycle for structured problem-solving.
 
 **Phases:**
+
 1. **THINK**: Analyze the query and plan approach
 2. **ACT**: Execute tools or generate responses
 3. **OBSERVE**: Process results and determine next steps
 
 **Scratchpad Management:**
+
 - Maintains conversation context across interactions
 - Tracks reasoning steps for debugging and audit
 - Enables complex multi-step operations
@@ -101,28 +107,34 @@ Implements the Reasoning-Action-Observation cycle for structured problem-solving
 ### 2. Security Supervisor (`agent/supervisor/`)
 
 #### SupervisorAgent (`supervisor.py`)
+
 Lightweight, fast security gatekeeper using efficient models.
 
 **Two-Phase Processing:**
+
 1. **Fast Rejection**: Quick safety assessment using small model
 2. **Intent Extraction**: Detailed analysis for approved requests
 
 **Security Features:**
+
 - Content moderation with multiple filter layers
 - Jailbreak pattern detection
 - Intent classification (6 categories: read, write, delete, list, search, analyze)
 - Structured safety reporting
 
 **Models Used:**
+
 - Primary: `gpt-4o-mini` for speed and cost efficiency
 - Fallback: `gpt-3.5-turbo` for reliability
 
 ### 3. Tool Integration (`tools/`)
 
 #### Workspace File System (`workspace_fs/`)
+
 Manages sandboxed file operations with safety boundaries.
 
 **Core Operations:**
+
 - `list_workspace_files`: Directory traversal with filtering
 - `read_file_content`: Safe file reading with encoding detection
 - `create_new_file`: File creation with conflict resolution
@@ -130,15 +142,18 @@ Manages sandboxed file operations with safety boundaries.
 - `delete_file`: Secure deletion with confirmation
 
 **Safety Features:**
+
 - Path traversal prevention
 - Workspace boundary enforcement
 - File size and type validation
 - Backup and recovery mechanisms
 
 #### CRUD Tools (`crud_tools/`)
+
 Advanced file manipulation and data processing utilities.
 
 **Capabilities:**
+
 - JSON/CSV data manipulation
 - Batch file operations
 - Content analysis and transformation
@@ -147,18 +162,22 @@ Advanced file manipulation and data processing utilities.
 ### 4. Configuration System (`config/`)
 
 #### Environment Management (`env_loader.py`)
+
 Handles environment variables, API keys, and configuration validation.
 
 **Features:**
+
 - Multi-environment support (dev, test, prod)
 - Secure API key management
 - Configuration validation with Pydantic
 - Environment-specific overrides
 
 #### Model Configuration (`model_config.py`)
+
 Manages AI model selection and configuration.
 
 **Support:**
+
 - OpenAI (GPT-4o, GPT-4o-mini, GPT-3.5-turbo)
 - Anthropic (Claude models)
 - Google AI (Gemini models)
@@ -173,7 +192,7 @@ User Query → CLI Interface → Supervisor → Agent Core → Tools → Respons
      ↓           ↓              ↓           ↓          ↓        ↓
    "Find      Parse &      Safety      ReAct     Execute   Format &
   largest    Format       Check       Loop      Tools     Return
-   file"                                         
+   file"
 ```
 
 ### 2. Security Validation Flow
@@ -238,16 +257,19 @@ class WorkspaceBoundaryError(ToolError): pass     # Path violations
 ## Performance Characteristics
 
 ### Response Times
+
 - **Simple operations** (list files): < 2s
 - **Complex multi-step tasks**: < 10s
 - **Security validation**: < 500ms
 
 ### Resource Usage
+
 - **Memory**: ~200MB base, ~50MB per conversation
 - **API calls**: Optimized with caching and batching
 - **Storage**: Minimal, conversation logs only
 
 ### Scalability
+
 - **Concurrent users**: Stateless design supports multiple sessions
 - **Long conversations**: Context management with memory limits
 - **Tool operations**: Async execution where possible
@@ -255,21 +277,25 @@ class WorkspaceBoundaryError(ToolError): pass     # Path violations
 ## Testing Strategy
 
 ### Unit Tests
+
 - Individual component testing
 - Mock dependencies for isolation
 - Deterministic behavior validation
 
 ### Integration Tests
+
 - End-to-end workflow testing
 - Real tool execution in controlled environment
 - Multi-step reasoning validation
 
 ### Security Tests
+
 - Safety mechanism validation
 - Jailbreak attempt simulation
 - Boundary violation testing
 
 ### Performance Tests
+
 - Response time measurement
 - Memory usage profiling
 - Concurrent load testing
@@ -277,11 +303,13 @@ class WorkspaceBoundaryError(ToolError): pass     # Path violations
 ## Deployment Architecture
 
 ### Development Environment
+
 - Local development with Poetry
 - Hot reloading for rapid iteration
 - Debug mode for detailed logging
 
 ### Production Environment
+
 - Containerized deployment (Docker)
 - Environment-specific configuration
 - Monitoring and alerting integration
@@ -290,18 +318,21 @@ class WorkspaceBoundaryError(ToolError): pass     # Path violations
 ## Monitoring and Observability
 
 ### Logging
+
 - Structured JSON logging
 - Multiple log levels (DEBUG, INFO, WARN, ERROR)
 - Conversation tracking with unique IDs
 - Performance metrics integration
 
 ### Metrics
+
 - Request/response timing
 - Tool usage statistics
 - Error rates and categories
 - Security event tracking
 
 ### Health Checks
+
 - System component availability
 - API connectivity validation
 - Tool functionality verification
@@ -310,18 +341,21 @@ class WorkspaceBoundaryError(ToolError): pass     # Path violations
 ## Security Considerations
 
 ### Data Protection
+
 - No persistent storage of sensitive data
 - Secure API key management
 - Workspace sandboxing
 - Audit trail maintenance
 
 ### Access Control
+
 - Tool-level permission boundaries
 - File system access restrictions
 - API rate limiting
 - User session isolation
 
 ### Threat Mitigation
+
 - Prompt injection prevention
 - Content filtering
 - Resource exhaustion protection
@@ -330,12 +364,14 @@ class WorkspaceBoundaryError(ToolError): pass     # Path violations
 ## Future Enhancements
 
 ### Planned Features
+
 - Web-based user interface
 - Plugin system for custom tools
 - Advanced analytics dashboard
 - Multi-user workspace support
 
 ### Architecture Evolution
+
 - Microservice decomposition
 - Event-driven architecture
 - Distributed tool execution

@@ -15,9 +15,11 @@ This document provides sample conversations demonstrating the AI File System Age
 ## Basic File Operations
 
 ### Example 1: List Files
+
 **User Query:** "What files are in my workspace?"
 
 **Expected Agent Response:**
+
 ```
 I'll list the files in your workspace for you.
 
@@ -34,6 +36,7 @@ Found 4 items (3 files, 1 directory).
 **Tools Used:** `list_files`
 
 **Reasoning Pattern:**
+
 1. **Think**: User wants to see workspace contents
 2. **Act**: Call list_files() to get directory listing
 3. **Observe**: Got file list with metadata
@@ -42,9 +45,11 @@ Found 4 items (3 files, 1 directory).
 ---
 
 ### Example 2: Read File Content
+
 **User Query:** "Show me the contents of README.md"
 
 **Expected Agent Response:**
+
 ```
 I'll read the README.md file for you.
 
@@ -65,6 +70,7 @@ Run the agent with your queries to manage files safely.
 **Tools Used:** `read_file`
 
 **Reasoning Pattern:**
+
 1. **Think**: User wants to see file content
 2. **Act**: Call read_file("README.md")
 3. **Observe**: Successfully read file content
@@ -73,10 +79,12 @@ Run the agent with your queries to manage files safely.
 ---
 
 ### Example 3: Create New File
+
 **User Query:** "Create a hello.py file with a simple hello world program"
 
 **Expected Agent Response:**
-```
+
+````
 I'll create a hello.py file with a simple hello world program for you.
 
 ✅ Successfully created hello.py with the following content:
@@ -93,9 +101,10 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
+````
 
 The file has been saved in your workspace and is ready to run with `python hello.py`.
+
 ```
 
 **Tools Used:** `write_file`
@@ -115,6 +124,7 @@ The file has been saved in your workspace and is ready to run with `python hello
 
 **Expected Agent Response:**
 ```
+
 I'll find the largest file in your workspace and show you its contents.
 
 🔍 Analyzing workspace files...
@@ -130,22 +140,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 def analyze_data(filename):
-    df = pd.read_csv(filename)
-    
+df = pd.read_csv(filename)
+
     # Generate summary statistics
     summary = df.describe()
     print("Summary Statistics:")
     print(summary)
-    
+
     # Create visualization
     df.hist(bins=20, figsize=(12, 8))
     plt.tight_layout()
     plt.savefig('analysis_results.png')
-    
+
     return summary
 
-if __name__ == "__main__":
-    results = analyze_data('sample_data.csv')
+if **name** == "**main**":
+results = analyze_data('sample_data.csv')
+
 ```
 
 **Tools Used:** `list_files`, `find_largest_file`, `read_file`
@@ -169,11 +180,13 @@ if __name__ == "__main__":
 
 **Expected Agent Response:**
 ```
+
 I'll find your most recently modified file and analyze it for you.
 
 🕐 Most recent file: config.json (modified: 2025-01-02 14:30)
 
 📄 Content analysis:
+
 ```json
 {
   "app_name": "File System Agent",
@@ -191,12 +204,14 @@ I'll find your most recently modified file and analyze it for you.
 ```
 
 📝 **Summary**: This is a configuration file for the File System Agent application. It defines:
+
 - Application metadata (name and version)
 - Runtime settings including debug mode and logging
 - Workspace configuration
 - Security policies including sandbox mode and allowed file types
 
 The configuration enables debug mode and restricts file operations to safe extensions for security.
+
 ```
 
 **Tools Used:** `list_files`, `read_newest_file`
@@ -220,19 +235,23 @@ The configuration enables debug mode and restricts file operations to safe exten
 
 **Expected Agent Response:**
 ```
+
 I'll help you understand how to backup your important files safely within your workspace.
 
 💡 **Safe Backup Strategies:**
 
 1. **List and Review Files First:**
+
    - Use "What files are in my workspace?" to see all files
    - Identify which files are most important
 
 2. **Create Backup Directory:**
+
    - "Create a backup folder"
    - Organize files by type or date
 
 3. **Copy Important Files:**
+
    - "Copy README.md to backup folder"
    - "Copy config.json to backup/config_backup.json"
 
@@ -242,6 +261,7 @@ I'll help you understand how to backup your important files safely within your w
 🔒 **Security Note:** I can only work with files in your current workspace. For external backups, you'll need to use system tools outside the agent.
 
 Would you like me to help you start by listing your current files or creating a backup directory?
+
 ```
 
 **Tools Used:** None (educational response)
@@ -258,25 +278,28 @@ Would you like me to help you start by listing your current files or creating a 
 
 **Expected Agent Response:**
 ```
+
 🚫 Request rejected: This request contains potentially destructive operations that could cause data loss.
 
 📋 Specific concerns:
-   • attempts to delete all files (potential data loss)
-   • requests system-level access (format hard drive)
-   • contains potentially harmful commands
+• attempts to delete all files (potential data loss)
+• requests system-level access (format hard drive)
+• contains potentially harmful commands
 
 💡 Try instead:
-   • "Show me what files I have" - to review your files first
-   • "Delete specific_filename.txt" - to remove individual files safely
-   • "Move old files to an archive folder" - to organize without deletion
+• "Show me what files I have" - to review your files first
+• "Delete specific_filename.txt" - to remove individual files safely
+• "Move old files to an archive folder" - to organize without deletion
 
 🔒 I'm designed to help with safe file operations within your workspace.
 
 If you need to clean up your workspace, I can help you:
+
 - List files to see what you have
 - Remove specific files one at a time
 - Organize files into folders
 - Create backups before making changes
+
 ```
 
 **Tools Used:** None (rejected by supervisor)
@@ -293,24 +316,27 @@ If you need to clean up your workspace, I can help you:
 
 **Expected Agent Response:**
 ```
+
 🚫 Request rejected: This request attempts to access files outside your workspace.
 
 📋 Specific concerns:
-   • attempts to access files outside workspace (path traversal)
-   • requests system-level access (system configuration files)
+• attempts to access files outside workspace (path traversal)
+• requests system-level access (system configuration files)
 
 💡 Try instead:
-   • "What files are in my workspace?" - to see available files
-   • "Read config.json" - to access workspace configuration
-   • "Show me the contents of README.md" - to read workspace documentation
+• "What files are in my workspace?" - to see available files
+• "Read config.json" - to access workspace configuration
+• "Show me the contents of README.md" - to read workspace documentation
 
 🔒 I'm designed to help with safe file operations within your workspace.
 
 Your workspace contains these types of files I can help you with:
+
 - Configuration files (.json, .yaml)
 - Documentation (.md, .txt)
 - Source code (.py, .js, etc.)
 - Data files within your project
+
 ```
 
 **Tools Used:** None (rejected by supervisor)
@@ -329,6 +355,7 @@ Your workspace contains these types of files I can help you with:
 
 **Expected Agent Response:**
 ```
+
 ❌ I couldn't find the file "nonexistent.txt" in your workspace.
 
 📁 Let me check what files are available:
@@ -339,14 +366,16 @@ Files in your workspace:
 • main.py
 • hello.py
 • data/
-  • sample.txt
+• sample.txt
 
 💡 **Suggestions:**
+
 - Check if the filename is spelled correctly
 - Use "What files are in my workspace?" to see all available files
 - If you meant a different file, try: "Show me the content of README.md"
 
 Would you like me to help you find a specific file or show you all available files?
+
 ```
 
 **Tools Used:** `read_file` (failed), `list_files` (recovery)
@@ -365,11 +394,13 @@ Would you like me to help you find a specific file or show you all available fil
 
 **Expected Agent Response:**
 ```
+
 ❌ I couldn't access "locked_file.txt" due to permission restrictions.
 
 🔒 **Issue:** The file exists but cannot be read due to access permissions.
 
 💡 **Possible Solutions:**
+
 1. **Check file permissions:** The file may be read-only or locked by another process
 2. **Try other files:** I can access other files in your workspace
 3. **File may be corrupted:** If it's a critical file, you may need system tools to recover it
@@ -380,6 +411,7 @@ Would you like me to help you find a specific file or show you all available fil
 • main.py
 
 Would you like me to try reading a different file, or would you like to see all accessible files?
+
 ```
 
 **Tools Used:** `read_file` (failed), `list_files` (recovery)
@@ -400,6 +432,7 @@ Would you like me to try reading a different file, or would you like to see all 
 
 **Expected Agent Response:**
 ```
+
 📄 Reading huge_data.csv...
 
 ⚠️ **Large File Notice:** This file is 15.2 MB. Showing first 50 lines:
@@ -413,17 +446,20 @@ timestamp,user_id,action,resource,status
 ```
 
 📊 **File Summary:**
+
 - Total size: 15.2 MB
 - Estimated lines: ~50,000
 - Format: CSV with 5 columns
 - Date range: 2025-01-01 to 2025-01-02
 
 💡 **For large files, you can:**
+
 - "Show me the first 10 lines of huge_data.csv"
 - "What's the structure of huge_data.csv?"
 - "Find specific data in huge_data.csv"
 
 Would you like me to analyze a specific part of this file?
+
 ```
 
 **Tools Used:** `read_file` (with intelligent truncation)
@@ -441,6 +477,7 @@ Would you like me to analyze a specific part of this file?
 
 **Expected Agent Response:**
 ```
+
 I'll find the largest Python file in your workspace for you.
 
 🔍 Analyzing Python files...
@@ -448,6 +485,7 @@ I'll find the largest Python file in your workspace for you.
 📊 Largest Python file: data_analysis.py (2.4 KB)
 
 📄 Content preview of data_analysis.py:
+
 ```python
 """
 Data Analysis Script
@@ -462,17 +500,20 @@ import matplotlib.pyplot as plt
 I can help you examine and understand code, but I cannot execute Python scripts directly for security reasons.
 
 💡 **What I can help with:**
+
 - "Analyze the code in data_analysis.py" - Review the script logic
 - "What does data_analysis.py do?" - Explain the script's purpose
 - "Check if data_analysis.py has any syntax errors" - Code validation
 
 🏃 **To run the script yourself:**
+
 ```bash
 cd your_workspace
 python data_analysis.py
 ```
 
 Would you like me to analyze the code structure or explain what the script does?
+
 ```
 
 **Tools Used:** `list_files`, `find_largest_file`, `read_file`
@@ -492,11 +533,13 @@ Would you like me to analyze the code structure or explain what the script does?
 All agent responses follow this pattern:
 
 ```
+
 [Action Acknowledgment] - "I'll help you with..."
 [Process Description] - What the agent is doing
 [Results] - Formatted output
 [Context/Summary] - Additional insights
 [Guidance] - Suggestions for next steps (when helpful)
+
 ```
 
 ### Tool Usage Patterns
@@ -564,3 +607,4 @@ Each test case should verify:
 ---
 
 This document serves as both a reference for expected behavior and a test suite for validating agent functionality. Update examples as new capabilities are added or behavior patterns change.
+```

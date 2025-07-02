@@ -7,17 +7,20 @@ A production-ready, secure AI agent that provides intelligent file system operat
 ### Installation
 
 1. **Clone the repository:**
+
    ```bash
    git clone <repository-url>
    cd homework-AIFileSystem
    ```
 
 2. **Install dependencies:**
+
    ```bash
    poetry install
    ```
 
 3. **Set up environment:**
+
    ```bash
    cp config/env/.env.example config/env/.env.local
    # Edit .env.local with your API keys
@@ -31,11 +34,13 @@ A production-ready, secure AI agent that provides intelligent file system operat
 ### Basic Usage
 
 **Start the interactive chat interface:**
+
 ```bash
 poetry run python -m chat_interface.cli_chat.chat
 ```
 
 **Example conversation:**
+
 ```
 You: List all files in my workspace
 Agent: I'll help you list all files. Let me explore your workspace.
@@ -55,7 +60,7 @@ The AI File System Agent follows a modular, secure-by-design architecture:
 ### Core Components
 
 - **🤖 Agent Core** (`agent/core/`): The main reasoning engine with ReAct loop
-- **🛡️ Supervisor** (`agent/supervisor/`): Lightweight security gatekeeper 
+- **🛡️ Supervisor** (`agent/supervisor/`): Lightweight security gatekeeper
 - **🔧 Tools** (`tools/`): File system operations and CRUD utilities
 - **💬 Chat Interface** (`chat_interface/`): Command-line interaction layer
 - **⚙️ Configuration** (`config/`): Environment and model management
@@ -70,6 +75,7 @@ The AI File System Agent follows a modular, secure-by-design architecture:
 ### Tool Integration
 
 The agent provides 5 core file system operations:
+
 - `list_workspace_files`: Directory and file listing
 - `read_file_content`: Safe file reading with encoding detection
 - `create_new_file`: File creation with conflict resolution
@@ -87,21 +93,24 @@ The agent provides 5 core file system operations:
 ## 🧪 Testing
 
 **Run the full test suite:**
+
 ```bash
 poetry run pytest
 ```
 
 **Run with coverage:**
+
 ```bash
 poetry run pytest --cov=. --cov-report=html
 ```
 
 **Test specific components:**
+
 ```bash
 # Agent reasoning tests
 poetry run pytest tests/unit/agent/
 
-# Tool integration tests  
+# Tool integration tests
 poetry run pytest tests/integration/
 
 # Safety and security tests
@@ -113,6 +122,7 @@ poetry run pytest tests/unit/supervisor/
 ### Environment Setup
 
 1. **API Keys**: Configure in `config/env/.env.local`
+
    ```env
    OPENAI_API_KEY=your_openai_key
    ANTHROPIC_API_KEY=your_anthropic_key
@@ -120,10 +130,11 @@ poetry run pytest tests/unit/supervisor/
    ```
 
 2. **Model Selection**: Edit `config/models.yaml`
+
    ```yaml
    roles:
-     agent: "gpt-4o"      # Main reasoning model
-     supervisor: "gpt-4o-mini"  # Fast security model
+     agent: "gpt-4o" # Main reasoning model
+     supervisor: "gpt-4o-mini" # Fast security model
    ```
 
 3. **Workspace Configuration**: Automatic sandbox initialization
@@ -131,6 +142,7 @@ poetry run pytest tests/unit/supervisor/
 ### Debug Mode
 
 Enable detailed reasoning logs:
+
 ```bash
 poetry run python -m chat_interface.cli_chat.chat --debug
 ```
@@ -153,16 +165,19 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 ## 🎯 Use Cases
 
 ### File Management
+
 - Organize and search through large file collections
 - Batch file operations with natural language commands
 - Content analysis and summarization
 
-### Development Workflows  
+### Development Workflows
+
 - Code file exploration and analysis
 - Documentation generation and updates
 - Project structure management
 
 ### Data Processing
+
 - CSV/JSON file manipulation and analysis
 - Log file parsing and filtering
 - Report generation from structured data
@@ -170,12 +185,14 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 ## 🤝 Contributing
 
 1. **Development Setup:**
+
    ```bash
    poetry install --with dev
    pre-commit install
    ```
 
 2. **Run Tests:**
+
    ```bash
    poetry run pytest
    poetry run mypy .
@@ -211,4 +228,4 @@ poetry run python -m chat_interface.cli_chat.chat --debug
 
 ---
 
-*Built with ❤️ using Pydantic-AI, featuring advanced safety mechanisms and production-ready architecture.*
+_Built with ❤️ using Pydantic-AI, featuring advanced safety mechanisms and production-ready architecture._
