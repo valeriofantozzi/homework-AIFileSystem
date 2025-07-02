@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tools" / "crud_too
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tools" / "workspace_fs" / "src"))
 
 from config.model_config import ModelConfig
-from crud_tools import create_file_tools
+from crud_tools import create_file_tools, answer_question_about_files
 from workspace_fs import Workspace
 
 from .react_loop import ReActLoop
@@ -94,8 +94,18 @@ class SecureAgent:
         # Initialize workspace
         self.workspace = Workspace(workspace_path)
         
-        # Create file system tools
+        # Create basic file system tools
         self.file_tools = create_file_tools(self.workspace, **fs_kwargs)
+        
+        # Add the intelligent question answering tool
+        async def answer_question_tool(query: str) -> str:
+            """Answer questions about files in the workspace using LLM analysis."""
+            return await answer_question_about_files(self.workspace, query)
+        
+        self.file_tools["answer_question_about_files"] = answer_question_tool
+        
+        # Add advanced file operations (Task 4.3)
+        self._add_advanced_file_operations()
         
         # Initialize ReAct loop
         self.react_loop = ReActLoop(
@@ -156,10 +166,18 @@ class SecureAgent:
         return """You are a secure AI assistant specialized in file system operations.
 
 You have access to the following tools:
-- list_files(): List all files in the workspace
+
+CORE FILE OPERATIONS:
+- list_files(): List all files in the workspace (sorted by modification time, newest first)
 - read_file(filename): Read content from a file
 - write_file(filename, content, mode): Write content to a file
 - delete_file(filename): Delete a file
+- answer_question_about_files(query): Answer questions about file contents using AI analysis
+
+ADVANCED OPERATIONS:
+- read_newest_file(): Read the most recently modified file
+- find_files_by_pattern(pattern): Find files matching a pattern (substring search)
+- get_file_info(filename): Get detailed metadata about a file
 
 IMPORTANT CONSTRAINTS:
 1. You can ONLY operate on files within your assigned workspace
@@ -235,9 +253,109 @@ Always explain your reasoning and what tools you're using."""
                 error_message=str(e)
             )
     
+    def _add_advanced_file_operations(self) -> None:
+        """Add advanced file operations for Task 4.3."""
+        
+        def read_newest_file() -> str:
+            """Read the content of the most recently modified file."""
+            try:
+                files = self.file_tools["list_files"]()
+                if not files:
+                    return "No files found in workspace"
+                
+                # list_files returns a list of files sorted by modification time (newest first)
+                if isinstance(files, list) and files:
+                    newest_file = files[0]
+                    content = self.file_tools["read_file"](newest_file)
+                    return f"Content of newest file '{newest_file}':\n{content}"
+                elif isinstance(files, str) and files.strip():
+                    # Handle string format (fallback)
+                    file_list = files.strip().split('\n')
+                    if file_list and file_list[0]:
+                        newest_file = file_list[0]
+                        content = self.file_tools["read_file"](newest_file)
+                        return f"Content of newest file '{newest_file}':\n{content}"
+                    else:
+                        return "No files found in workspace"
+                else:
+                    return "No files found in workspace"
+            except Exception as e:
+                return f"Error reading newest file: {str(e)}"
+        
+        def find_files_by_pattern(pattern: str) -> str:
+            """Find files matching a pattern (simple substring match)."""
+            try:
+                files = self.file_tools["list_files"]()
+                if not files:
+                    return "No files found in workspace"
+                
+                # Handle both list and string formats
+                if isinstance(files, list):
+                    file_list = files
+                elif isinstance(files, str) and files.strip():
+                    file_list = files.strip().split('\n')
+                else:
+                    return "No files found in workspace"
+                
+                matching_files = [f for f in file_list if f and pattern.lower() in f.lower()]
+                
+                if matching_files:
+                    return f"Files matching pattern '{pattern}':\n" + '\n'.join(matching_files)
+                else:
+                    return f"No files found matching pattern '{pattern}'"
+            except Exception as e:
+                return f"Error finding files by pattern: {str(e)}"
+        
+        def get_file_info(filename: str) -> str:
+            """Get metadata information about a file."""
+            try:
+                import os
+                file_path = os.path.join(self.workspace_path, filename)
+                
+                if not os.path.exists(file_path) or not os.path.isfile(file_path):
+                    return f"File '{filename}' not found"
+                
+                # Get basic file metadata
+                stat = os.stat(file_path)
+                size = stat.st_size
+                modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Try to get content preview
+                try:
+                    content = self.file_tools["read_file"](filename)
+                    lines = len(content.split('\n'))
+                    preview = content[:200] + "..." if len(content) > 200 else content
+                except Exception:
+                    lines = "unknown"
+                    preview = "Cannot read content"
+                
+                return (f"File: {filename}\n"
+                       f"Size: {size} bytes\n"
+                       f"Modified: {modified}\n"
+                       f"Lines: {lines}\n"
+                       f"Preview:\n{preview}")
+            except Exception as e:
+                return f"Error getting file info for '{filename}': {str(e)}"
+        
+        # Add advanced operations to tools
+        self.file_tools["read_newest_file"] = read_newest_file
+        self.file_tools["find_files_by_pattern"] = find_files_by_pattern
+        self.file_tools["get_file_info"] = get_file_info
+    
     def get_available_tools(self) -> List[str]:
         """Get list of available tool names."""
-        return ["list_files", "read_file", "write_file", "delete_file", "answer_question_about_files"]
+        return [
+            # Core CRUD operations
+            "list_files", 
+            "read_file", 
+            "write_file", 
+            "delete_file", 
+            "answer_question_about_files",
+            # Advanced operations (Task 4.3)
+            "read_newest_file",
+            "find_files_by_pattern", 
+            "get_file_info"
+        ]
     
     def get_workspace_info(self) -> Dict[str, Any]:
         """Get information about the current workspace."""

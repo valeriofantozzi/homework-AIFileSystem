@@ -207,7 +207,11 @@ class ReActLoop:
             if tool_name == "read_file" and tool_args.get("filename") == "LATEST_FILE":
                 # First get the file list to find the latest file
                 list_result = self.tools["list_files"]()
-                if list_result:
+                if isinstance(list_result, list) and list_result:
+                    latest_file = list_result[0]  # list_files returns newest first
+                    tool_args["filename"] = latest_file
+                    self.logger.info("Resolved LATEST_FILE", filename=latest_file)
+                elif isinstance(list_result, str) and list_result.strip():
                     files = list_result.strip().split('\n')
                     if files and files[0]:  # list_files returns newest first
                         latest_file = files[0]
@@ -223,10 +227,20 @@ class ReActLoop:
             # Execute the tool
             tool_func = self.tools[tool_name]
             
+            # Handle both sync and async tools
+            import asyncio
+            import inspect
+            
             if tool_args:
-                result = tool_func(**tool_args)
+                if inspect.iscoroutinefunction(tool_func):
+                    result = await tool_func(**tool_args)
+                else:
+                    result = tool_func(**tool_args)
             else:
-                result = tool_func()
+                if inspect.iscoroutinefunction(tool_func):
+                    result = await tool_func()
+                else:
+                    result = tool_func()
             
             # Record the action
             step = ReActStep(
@@ -252,7 +266,8 @@ class ReActLoop:
                 step_number=len(self.scratchpad) + 1,
                 content=error_msg,
                 tool_name=tool_name,
-                tool_args=tool_args
+                tool_args=tool_args,
+                tool_result=error_msg  # Store the error in tool_result too
             )
             self.scratchpad.append(step)
             
@@ -347,19 +362,73 @@ Think about whether I have enough information to answer the user's question or i
         context_summary = self._build_context_summary()
         user_query = getattr(context, 'user_query', '')
         
-        # Enhanced tool selection logic
+        # Enhanced tool selection logic with better pattern matching
         thought_lower = last_thought.lower()
         query_lower = user_query.lower()
+        
+        # Check for multi-step operations first
+        actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
+        
+        # If this is a multi-step request ("first X, then Y"), continue with next step
+        if ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
+            if len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
+                # We did list_files, now check if we need to read something
+                if "read" in query_lower:
+                    filename = self._extract_filename(last_thought, user_query)
+                    if filename:
+                        return {"tool": "read_file", "args": {"filename": filename}}
+        
+        # Check for explicit tool mentions first
+        if "find_files_by_pattern" in query_lower:
+            # Extract pattern from query
+            pattern = self._extract_pattern(user_query)
+            if pattern:
+                return {"tool": "find_files_by_pattern", "args": {"pattern": pattern}}
+        
+        if "get_file_info" in query_lower:
+            # Extract filename from query
+            filename = self._extract_filename(last_thought, user_query)
+            if filename:
+                return {"tool": "get_file_info", "args": {"filename": filename}}
+        
+        if "read_newest_file" in query_lower:
+            return {"tool": "read_newest_file", "args": {}}
         
         # Analyze what the user wants and what we've learned so far
         if "list" in thought_lower or "files" in thought_lower or "what files" in query_lower:
             return {"tool": "list_files", "args": {}}
         
-        # Look for filename extraction patterns
-        elif "read" in thought_lower or "content" in thought_lower or "open" in thought_lower:
+        # Look for "newest" or "latest" file patterns
+        elif ("newest" in query_lower or "latest" in query_lower or "most recent" in query_lower):
+            if "read" in query_lower or "content" in query_lower or "what" in query_lower:
+                # Use the direct newest file function
+                return {"tool": "read_newest_file", "args": {}}
+            else:
+                return {"tool": "list_files", "args": {}}
+        
+        # Look for pattern matching requests
+        elif ("find" in query_lower and "pattern" in query_lower) or ("containing" in query_lower):
+            pattern = self._extract_pattern(user_query)
+            if pattern:
+                return {"tool": "find_files_by_pattern", "args": {"pattern": pattern}}
+            else:
+                return {"tool": "list_files", "args": {}}
+        
+        # Look for file information requests
+        elif ("information" in query_lower or "info" in query_lower or "details" in query_lower or "metadata" in query_lower):
             filename = self._extract_filename(last_thought, user_query)
             if filename:
+                return {"tool": "get_file_info", "args": {"filename": filename}}
+            else:
+                return {"tool": "list_files", "args": {}}
+        
+        # Look for filename extraction patterns for reading
+        elif "read" in thought_lower or "content" in thought_lower or "open" in thought_lower:
+            filename = self._extract_filename(last_thought, user_query)
+            if filename and filename != "LATEST_FILE":
                 return {"tool": "read_file", "args": {"filename": filename}}
+            elif filename == "LATEST_FILE":
+                return {"tool": "read_newest_file", "args": {}}
             else:
                 # If no specific filename, might need to list files first
                 return {"tool": "list_files", "args": {}}
@@ -397,12 +466,60 @@ Think about whether I have enough information to answer the user's question or i
         # Simple heuristic - continue if we haven't reached a conclusion
         if len(self.scratchpad) < 2:
             return True
-            
+        
+        # Get the original user query to check for multi-step operations
+        user_query = ""
+        for step in self.scratchpad:
+            if hasattr(step, 'content') and 'I need to help the user with:' in step.content:
+                lines = step.content.split('\n')
+                for line in lines:
+                    if 'I need to help the user with:' in line:
+                        user_query = line.split('I need to help the user with:')[1].strip()
+                        break
+                break
+        
+        # Check for multi-step operations
+        query_lower = user_query.lower()
+        if ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
+            actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
+            # If we only did one action in a multi-step request, continue
+            if len(actions_taken) == 1 and ("list" in query_lower and "read" in query_lower):
+                return True
+        
+        # Check if we've done too many iterations of the same action
+        recent_actions = [step for step in self.scratchpad[-4:] if step.phase == ReActPhase.ACT]
+        if len(recent_actions) >= 3:
+            # Check if we're repeating the same tool
+            tool_names = [action.tool_name for action in recent_actions]
+            if len(set(tool_names)) == 1:  # All same tool
+                return False  # Stop repeating
+        
         last_observation = self.scratchpad[-1].content.lower()
         
         # Stop if we got an error or completed the task
         stop_phrases = ["failed", "error", "completed", "done", "finished"]
-        return not any(phrase in last_observation for phrase in stop_phrases)
+        
+        # Also stop if we got a meaningful result (like an empty list or file content)
+        if any(phrase in last_observation for phrase in stop_phrases):
+            return False
+            
+        # Stop if we have a clear result from our actions
+        last_actions = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
+        if last_actions:
+            last_action = last_actions[-1]
+            # If we got a result (even empty), that's often sufficient
+            if last_action.tool_result is not None:
+                # For list_files, even empty result is valid - unless this is multi-step
+                if last_action.tool_name == "list_files":
+                    # Continue if this is part of a multi-step operation
+                    if ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
+                        return len(last_actions) == 1  # Continue if we only did list_files
+                    return False
+                # For other tools, check if we got meaningful content
+                elif last_action.tool_result.strip():
+                    return False
+        
+        return True
     
     async def _generate_final_response(self, query: str, context: Any) -> str:
         """Generate the final response based on reasoning steps."""
@@ -430,9 +547,15 @@ Think about whether I have enough information to answer the user's question or i
         failed_actions = []
         
         for action in actions_taken:
-            if action.tool_result and "error" not in action.tool_result.lower():
+            # Check if action failed by looking for specific failure indicators
+            if (action.tool_result and 
+                ("tool execution failed" in action.tool_result.lower() or
+                 "file not found" in action.tool_result.lower() or
+                 "error" in action.tool_result.lower() and "error" in action.content.lower())):
+                failed_actions.append(action)
+            elif action.tool_result:  # Has result and no failure indicators
                 successful_actions.append(action)
-            else:
+            else:  # No result at all
                 failed_actions.append(action)
         
         # Handle different types of responses
@@ -467,6 +590,41 @@ Think about whether I have enough information to answer the user's question or i
                 elif tool_name == "delete_file":
                     filename = action.tool_args.get('filename', 'unknown')
                     response_parts.append(f"• Deleted file '{filename}'")
+                
+                elif tool_name == "read_newest_file":
+                    response_parts.append(f"• Read newest file from workspace")
+                    if result:
+                        if len(result) < 500:  # Show full content if not too long
+                            response_parts.append(f"  Result: {result}")
+                        else:
+                            response_parts.append(f"  Result preview: {result[:200]}...")
+                
+                elif tool_name == "find_files_by_pattern":
+                    pattern = action.tool_args.get('pattern', 'unknown') if action.tool_args else 'unknown'
+                    response_parts.append(f"• Found files matching pattern '{pattern}'")
+                    if result:
+                        response_parts.append(f"  Result: {result}")
+                
+                elif tool_name == "get_file_info":
+                    filename = action.tool_args.get('filename', 'unknown') if action.tool_args else 'unknown'
+                    response_parts.append(f"• Got information for file '{filename}'")
+                    if result:
+                        response_parts.append(f"  Result: {result}")
+                
+                elif tool_name == "answer_question_about_files":
+                    query = action.tool_args.get('query', 'unknown') if action.tool_args else 'unknown'
+                    response_parts.append(f"• Answered question: '{query}'")
+                    if result:
+                        response_parts.append(f"  Result: {result}")
+                
+                else:
+                    # Generic fallback for any other tools
+                    response_parts.append(f"• Used {tool_name}")
+                    if result:
+                        if len(result) < 200:
+                            response_parts.append(f"  Result: {result}")
+                        else:
+                            response_parts.append(f"  Result preview: {result[:200]}...")
         
         if failed_actions:
             response_parts.append("\nSome actions encountered issues:")
@@ -593,3 +751,31 @@ Think about whether I have enough information to answer the user's question or i
                     return sentence.strip()
         
         return user_query  # Default to original query
+
+    def _extract_pattern(self, text: str) -> Optional[str]:
+        """Extract search pattern from text."""
+        import re
+        
+        # Look for patterns in quotes
+        quoted_pattern = r"['\"]([^'\"]+)['\"]"
+        match = re.search(quoted_pattern, text)
+        if match:
+            return match.group(1)
+        
+        # Look for "containing X" patterns
+        containing_pattern = r"containing\s+['\"]?([^'\"\s]+)['\"]?"
+        match = re.search(containing_pattern, text, re.IGNORECASE)
+        if match:
+            return match.group(1)
+        
+        # Look for common patterns
+        if "txt" in text.lower():
+            return "txt"
+        elif "json" in text.lower():
+            return "json"
+        elif "log" in text.lower():
+            return "log"
+        elif "config" in text.lower():
+            return "config"
+        
+        return None
