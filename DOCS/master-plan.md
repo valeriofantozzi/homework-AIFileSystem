@@ -81,29 +81,35 @@ supervisor (light LLM gatekeeper & router)
 
 ## 5. Deliverable Directory Layout
 
+```bash
 /project-root
-├── agent/
-│ ├── core/ # SecureAgent, ReAct logic
-│ └── supervisor/ # LLM gatekeeper
-├── config/ # Environment and model configuration
-│ ├── env/ # Environment template files
-│ └── models.yaml # Model definitions
-├── tools/
-│ ├── workspace_fs/ # sandbox & FS helpers
-│ └── crud_tools/ # list/read/write/delete/answer tools
-├── chat_interface/
-│ ├── cli_chat/
-│ └── demo_streamlit/ # optional bonus
-├── server/
-│ └── api_mcp/ # FastAPI endpoint and manifest
-├── tests/ # unit + e2e
-├── manage_env.py # Environment management CLI
-├── demo_env_system.py # Configuration demo
-├── ENV_SETUP.md # Setup documentation
-├── .env.\*.template # Environment templates
-├── mcp_config.json
-├── pyproject.toml + poetry.lock (or requirements.txt)
-└── README.md # architecture, setup, usage, security model
+├── agent/                   # Main agent logic
+│   ├── core/               # Core agent implementation
+│   └── supervisor/         # LLM gatekeeper and safety layer
+├── dev/                    # Development utilities and sandbox
+│   ├── demos/             # Feature demonstrations
+│   └── sandbox/           # Development testing area
+├── tools/                  # Tool implementations
+│   ├── workspace_fs/      # Secure file system operations
+│   │   ├── src/workspace_fs/
+│   │   └── tests/
+│   └── crud_tools/        # High-level CRUD operations
+│       ├── src/crud_tools/
+│       └── tests/
+├── chat_interface/         # CLI, notebook, or UI interface
+│   ├── cli_chat/          # Command-line interface
+│   └── demo_streamlit/    # Optional Streamlit web interface
+├── server/                 # MCP server implementation
+│   └── api_mcp/           # FastAPI endpoint and manifest
+├── tests/                  # Pytest test cases
+│   ├── integration/       # End-to-end integration tests
+│   ├── unit/              # Unit tests for individual components
+│   └── mocks/             # Mock objects and test utilities
+├── config/                 # Environment and model configuration system
+│   └── env/               # Environment template files
+├── DOCS/                   # Project documentation
+└── htmlcov/               # Coverage reports (generated)
+```
 
 _Each sub-package is individually installable (`pip install -e`)._
 
