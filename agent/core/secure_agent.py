@@ -7,6 +7,7 @@ can interact with file system tools while maintaining security constraints.
 """
 
 import json
+import logging
 import os
 import re
 import sys
@@ -16,8 +17,23 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import structlog
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
+
+from config import ModelConfig
+from tools.workspace_fs.src.workspace_fs import Workspace
+from tools.crud_tools.src.crud_tools import create_gemini_question_tool
+from .exceptions import (
+    AgentError, 
+    AgentInitializationError, 
+    ModelConfigurationError,
+    ToolExecutionError, 
+    ReasoningError, 
+    SafetyViolationError,
+    ConversationError,
+    ErrorFormatter
+)
+
 
 # Add tools to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "tools" / "crud_tools" / "src"))
@@ -68,24 +84,21 @@ class ToolResultFormatter:
     
     @staticmethod
     def format_error_result(tool_name: str, error: Exception, execution_time: float = None) -> str:
-        """Format a tool execution error with helpful context."""
-        timestamp = datetime.now().strftime("%H:%M:%S")
+        """Format a tool execution error with enhanced context and recovery suggestions."""
         time_info = f" ({execution_time:.2f}s)" if execution_time else ""
-        error_type = type(error).__name__
         
-        # Provide helpful suggestions based on error type
-        suggestions = {
-            "FileNotFoundError": "Try listing files first to see what's available.",
-            "PermissionError": "Check if the file exists and is accessible.",
-            "ValueError": "Check if the arguments are valid.",
-            "OSError": "There may be a filesystem issue.",
-        }
+        # If it's already an AgentError, use its formatting
+        if isinstance(error, AgentError):
+            return ErrorFormatter.format_error_for_user(error)
         
-        suggestion = suggestions.get(error_type, "Review the tool arguments and try again.")
+        # Create a ToolExecutionError for consistent formatting
+        tool_error = ToolExecutionError(
+            message=str(error),
+            tool_name=tool_name,
+            original_error=error
+        )
         
-        return (f"❌ {tool_name} failed{time_info} ({error_type}):\n"
-                f"Error: {str(error)}\n"
-                f"Suggestion: {suggestion}")
+        return ErrorFormatter.format_error_for_user(tool_error)
     
     @staticmethod
     def format_validation_error(tool_name: str, validation_message: str) -> str:
@@ -381,16 +394,52 @@ Always explain your reasoning and what tools you're using."""
             
             return response
             
-        except Exception as e:
+        except AgentError as e:
+            # Agent-specific errors with enhanced formatting
             self.logger.error(
-                "Error processing query",
+                "Agent error processing query",
                 conversation_id=conversation_id,
-                error=str(e)
+                error_code=e.error_code,
+                error_type=type(e).__name__,
+                context=e.context
             )
+            
+            error_message = ErrorFormatter.format_error_for_user(e)
+            if self.debug_mode:
+                error_message = ErrorFormatter.format_error_for_debug(e)
             
             return AgentResponse(
                 conversation_id=conversation_id,
-                response=f"I encountered an error: {str(e)}",
+                response=error_message,
+                tools_used=[],
+                success=False,
+                error_message=e.message
+            )
+            
+        except Exception as e:
+            # Unexpected errors - wrap in generic AgentError
+            self.logger.error(
+                "Unexpected error processing query",
+                conversation_id=conversation_id,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            
+            # Create a generic agent error for consistent handling
+            agent_error = ReasoningError(
+                message=f"An unexpected error occurred during processing: {str(e)}",
+                reasoning_step="query_processing"
+            )
+            agent_error.context["original_error"] = str(e)
+            agent_error.context["original_error_type"] = type(e).__name__
+            
+            error_message = ErrorFormatter.format_error_for_user(agent_error)
+            if self.debug_mode:
+                error_message = ErrorFormatter.format_error_for_debug(agent_error)
+            
+            return AgentResponse(
+                conversation_id=conversation_id,
+                response=error_message,
                 tools_used=[],
                 success=False,
                 error_message=str(e)
