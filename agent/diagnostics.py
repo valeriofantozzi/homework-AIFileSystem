@@ -15,7 +15,7 @@ from collections import defaultdict, deque
 import psutil
 import os
 
-from config.env_loader import EnvLoader
+from config.env_loader import EnvironmentLoader
 
 
 @dataclass
@@ -66,7 +66,7 @@ class DiagnosticLogger:
     """Enhanced logging system with structured output and multiple levels of detail."""
     
     def __init__(self):
-        self.env = EnvLoader.load()
+        self.env = EnvironmentLoader()
         self.log_dir = Path("logs")
         self.log_dir.mkdir(exist_ok=True)
         
@@ -84,7 +84,8 @@ class DiagnosticLogger:
         
         # Main agent logger
         self.agent_logger = logging.getLogger("agent")
-        self.agent_logger.setLevel(logging.DEBUG if self.env.debug else logging.INFO)
+        debug_mode = os.getenv("DEBUG", "false").lower() == "true"
+        self.agent_logger.setLevel(logging.DEBUG if debug_mode else logging.INFO)
         
         # Performance logger
         self.perf_logger = logging.getLogger("performance")
@@ -129,7 +130,8 @@ class DiagnosticLogger:
         self.error_logger.addHandler(error_handler)
         
         # Console output for debug mode
-        if self.env.debug:
+        debug_mode = os.getenv("DEBUG", "false").lower() == "true"
+        if debug_mode:
             console_handler = logging.StreamHandler()
             console_handler.setFormatter(detailed_formatter)
             console_handler.setLevel(logging.DEBUG)
@@ -312,9 +314,9 @@ class DiagnosticLogger:
         diagnostics = {
             "export_timestamp": datetime.now().isoformat(),
             "system_info": {
-                "python_version": self.env.python_version,
-                "environment": self.env.environment,
-                "debug_mode": self.env.debug,
+                "python_version": os.getenv("PYTHON_VERSION", "unknown"),
+                "environment": os.getenv("AI_ENVIRONMENT", "unknown"),
+                "debug_mode": os.getenv("DEBUG", "false").lower() == "true",
                 "process_id": os.getpid(),
                 "memory_usage_mb": psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
             },

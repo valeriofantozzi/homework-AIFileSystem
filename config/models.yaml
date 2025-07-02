@@ -86,7 +86,7 @@ roles:
   
   # Development & testing
   test_mock: "local:ollama:fast"   # For unit tests
-  development: "groq:fast"         # Fast iteration during dev
+  development: "openai:fast"       # Fast iteration during dev
   
   # Specialized tasks
   code_review: "anthropic:standard"  # Code analysis
@@ -98,10 +98,10 @@ roles:
 environments:
   development:
     # Use fast/cheap models for development
-    default_provider: "groq"
+    default_provider: "openai"
     roles:
-      agent: "groq:fast"
-      chat: "groq:fast"
+      agent: "openai:fast"
+      chat: "openai:fast"
   
   testing:
     # Use local models for reliable testing

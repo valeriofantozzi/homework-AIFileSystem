@@ -9,32 +9,63 @@ This guide provides comprehensive examples and patterns for using the AI File Sy
 1. **Environment Configuration:**
 
    ```bash
-   # Copy and edit configuration
-   cp config/env/.env.example config/env/.env.local
-
-   # Add your API keys
+   # Create or edit the local environment file
+   # (Note: .env.local.template may not exist - create .env.local directly)
    vim config/env/.env.local
+
+   # Add your OpenAI API key (minimum required):
+   OPENAI_API_KEY=sk-your-openai-key-here
+   ```
+
+   **Model Configuration:** Edit `config/models.yaml` to use OpenAI for development:
+
+   ```yaml
+   roles:
+     development:
+       agent: "gpt-4o-mini"
+       supervisor: "gpt-4o-mini"
    ```
 
 2. **Workspace Initialization:**
 
    ```bash
-   # Initialize the sandbox workspace
-   poetry run python -m tools.workspace_fs.workspace init
+   # Create the sandbox workspace directory
+   mkdir -p sandbox
 
-   # Verify setup
-   poetry run python -m tools.workspace_fs.workspace status
+   # Install dependencies (important!)
+   poetry install
+
+   # Verify Poetry environment is working
+   poetry env info
    ```
 
 3. **Start the Agent:**
 
    ```bash
-   # Interactive mode
-   poetry run python -m chat_interface.cli_chat.chat
+   # Interactive mode with workspace specification
+   poetry run python -m chat_interface.cli_chat.chat --workspace ./sandbox --env development
 
-   # Debug mode (see reasoning)
-   poetry run python -m chat_interface.cli_chat.chat --debug
+   # Debug mode (see reasoning steps)
+   poetry run python -m chat_interface.cli_chat.chat --workspace ./sandbox --env development --debug
+
+   # Quick test with a simple command
+   echo "Show me all files in my workspace" | poetry run python -m chat_interface.cli_chat.chat --workspace ./sandbox --env development
    ```
+
+4. **Verify Setup (Optional):**
+
+   Create a test file and verify the agent can access it:
+
+   ```bash
+   # Create a test file
+   echo "Hello, AI Agent!" > sandbox/test.txt
+
+   # Start the agent and test with a simple query
+   poetry run python -m chat_interface.cli_chat.chat --workspace ./sandbox --env development
+   # Then in the agent prompt: "List all files in my workspace"
+   ```
+
+   **Expected output:** The agent should list your test.txt file and any other files in the sandbox directory.
 
 ## Basic Operations
 
@@ -44,18 +75,26 @@ This guide provides comprehensive examples and patterns for using the AI File Sy
 
 ```
 You: Show me all files in my workspace
-Agent: I'll explore your workspace and show you all the files.
+Agent: I successfully completed the following actions: • Listed 9 files in the workspace Files: ✅ Found 9 files (0.00s):
 
-[Lists files with sizes, dates, and organization]
+• usage_guide_demo.txt
+• quick_demo.txt
+• project_structure.md
+• config_summary.json
+• demo_guide.txt
+• config.json
+• employees.csv
+• fibonacci.py
+• hello.txt
 ```
 
 **Filtered listing:**
 
 ```
 You: Find all Python files
-Agent: I'll search for Python files in your workspace.
+Agent: I successfully completed the following actions: • Listed 9 files in the workspace Files: ✅ Found 9 files (0.00s):
 
-[Shows *.py files with details]
+[Shows all files including fibonacci.py - the Python file in the workspace]
 ```
 
 **Directory structure:**
@@ -72,10 +111,8 @@ Agent: I'll map out your directory structure for you.
 **Read specific file:**
 
 ```
-You: Read the contents of config.json
-Agent: I'll read the config.json file for you.
-
-[Displays file contents with syntax highlighting]
+You: Read the contents of hello.txt
+Agent: I successfully completed the following actions: • Read file 'hello.txt' (120 characters) Content: ✅ Read file (0.00s) (79 chars, 3 lines): Hello, World! This is a simple text file for testing the AI File System Agent.
 ```
 
 **Read newest file:**
@@ -304,6 +341,40 @@ The agent automatically ensures safe operations:
 - Use version control for important files
 
 ## Troubleshooting Common Issues
+
+### Setup and Configuration Issues
+
+**Missing Dependencies:**
+
+```
+Error: ModuleNotFoundError: No module named 'psutil'
+Solution: Install all dependencies with Poetry:
+poetry install
+
+Error: No module named 'tools.workspace_fs.workspace'
+Solution: Run the agent from the project root directory with proper command:
+poetry run python -m chat_interface.cli_chat.chat --workspace ./sandbox --env development
+```
+
+**Environment and Configuration Issues:**
+
+```
+Error: 'EnvironmentLoader' object has no attribute 'debug'
+Solution: This was fixed in agent/diagnostics.py. Update to latest version or:
+- Replace EnvLoader with EnvironmentLoader
+- Replace .debug attribute checks with environment variable checks
+
+Error: GROQ_API_KEY environment variable not set
+Solution: Update config/models.yaml to use OpenAI for development:
+roles:
+  development:
+    agent: "gpt-4o-mini"
+    supervisor: "gpt-4o-mini"
+
+Error: No .env.local.template file
+Solution: Create config/env/.env.local directly with your API key:
+OPENAI_API_KEY=sk-your-key-here
+```
 
 ### Connection Problems
 
