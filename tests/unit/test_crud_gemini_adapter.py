@@ -192,7 +192,7 @@ class TestGeminiQuestionToolCreation:
                 mock_subprocess.return_value = mock_process
                 
                 # Mock FileSystemTools to raise an error for one file
-                with patch('crud_tools.gemini_adapter.FileSystemTools') as mock_fs:
+                with patch('workspace_fs.FileSystemTools') as mock_fs:
                     mock_fs_instance = mock_fs.return_value
                     mock_fs_instance.list_files.return_value = ["good.py", "bad.py"]
                     
