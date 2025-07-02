@@ -15,6 +15,8 @@ import structlog
 from pydantic import BaseModel
 
 from config.model_config import ModelProvider
+# Import diagnostics for tool usage tracking
+from agent.diagnostics import log_tool_usage
 
 
 class ReActPhase(Enum):
@@ -274,6 +276,9 @@ class ReActLoop:
             
             # Execute the tool
             tool_func = self.tools[tool_name]
+            
+            # Log tool usage for diagnostics
+            log_tool_usage(tool_name, tool_args)
             
             # Handle both sync and async tools
             import asyncio

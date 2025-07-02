@@ -33,6 +33,14 @@ from .exceptions import (
     ConversationError,
     ErrorFormatter
 )
+# Import diagnostics for performance tracking and usage statistics
+from agent.diagnostics import (
+    start_operation,
+    end_operation, 
+    log_conversation_start,
+    log_tool_usage,
+    log_security_event
+)
 
 
 # Add tools to path
@@ -368,6 +376,16 @@ Always explain your reasoning and what tools you're using."""
             debug_mode=self.debug_mode
         )
         
+        # Start diagnostics tracking for this operation
+        operation_id = start_operation("process_query", {
+            "conversation_id": conversation_id,
+            "query_length": len(user_query),
+            "workspace_path": str(self.workspace_path)
+        })
+        
+        # Log conversation start for usage statistics
+        log_conversation_start(conversation_id, user_query)
+        
         self.logger.info(
             "Processing user query",
             conversation_id=conversation_id,
@@ -386,6 +404,13 @@ Always explain your reasoning and what tools you're using."""
                 success=True
             )
             
+            # End operation tracking with success
+            end_operation(
+                operation_id, 
+                success=True, 
+                result_summary=f"Query processed successfully, {len(result.tools_used)} tools used"
+            )
+            
             self.logger.info(
                 "Query processed successfully",
                 conversation_id=conversation_id,
@@ -402,6 +427,13 @@ Always explain your reasoning and what tools you're using."""
                 error_code=e.error_code,
                 error_type=type(e).__name__,
                 context=e.context
+            )
+            
+            # End operation tracking with failure
+            end_operation(
+                operation_id, 
+                success=False, 
+                error_message=f"{type(e).__name__}: {e.message}"
             )
             
             error_message = ErrorFormatter.format_error_for_user(e)
@@ -423,6 +455,13 @@ Always explain your reasoning and what tools you're using."""
                 conversation_id=conversation_id,
                 error=str(e),
                 error_type=type(e).__name__
+            )
+            
+            # End operation tracking with failure
+            end_operation(
+                operation_id, 
+                success=False, 
+                error_message=f"Unexpected error: {type(e).__name__}: {str(e)}"
             )
             
             # Create a generic agent error for consistent handling

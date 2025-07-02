@@ -15,6 +15,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 
 from config import get_model_for_role
+# Import diagnostics for security event logging
+from agent.diagnostics import log_security_event
 
 
 class ModerationDecision(Enum):
@@ -251,6 +253,19 @@ class RequestSupervisor:
     ) -> ModerationResponse:
         """Create enhanced rejection response with detailed explanations."""
         
+        # Log security event for monitoring
+        log_security_event(
+            event_type="request_rejected",
+            details={
+                "conversation_id": request.conversation_id,
+                "query_preview": request.user_query[:100],
+                "detected_risks": [risk.value for risk in filter_result.detected_risks],
+                "confidence": filter_result.confidence,
+                "reason": filter_result.explanation
+            },
+            severity="WARNING"
+        )
+        
         # Create detailed explanation
         reason_parts = [f"🚫 Request rejected: {filter_result.explanation}"]
         
@@ -375,6 +390,19 @@ class RequestSupervisor:
                            decision=moderation_response.decision.value,
                            allowed=moderation_response.allowed,
                            filter_confidence=filter_result.confidence)
+            
+            # Log security event for successful moderation
+            if moderation_response.allowed:
+                log_security_event(
+                    event_type="request_approved",
+                    details={
+                        "conversation_id": request.conversation_id,
+                        "query_preview": request.user_query[:100],
+                        "intent": moderation_response.intent.value if moderation_response.intent else "unknown",
+                        "filter_confidence": filter_result.confidence
+                    },
+                    severity="INFO"
+                )
             
             return moderation_response
             
