@@ -366,10 +366,26 @@ class CLIChat:
             # First check with supervisor for safety and intent extraction
             self.console.print("[dim]🔍 Validating request...[/dim]")
             
-            # Create moderation request
+            # Get or create conversation ID for memory tracking
+            conversation_id = getattr(self, '_current_conversation_id', None)
+            if conversation_id is None:
+                import uuid
+                conversation_id = str(uuid.uuid4())
+                self._current_conversation_id = conversation_id
+            
+            # Get conversation context for ambiguous response detection
+            conversation_context = None
+            if hasattr(self.agent, 'file_tools') and 'get_conversation_context' in self.agent.file_tools:
+                try:
+                    conversation_context = self.agent.file_tools['get_conversation_context'](conversation_id)
+                except Exception as e:
+                    self.logger.warning("Failed to get conversation context", error=str(e))
+            
+            # Create moderation request with context
             moderation_request = ModerationRequest(
                 user_query=user_input,
-                conversation_id=str(uuid.uuid4())
+                conversation_id=conversation_id,
+                conversation_context=conversation_context
             )
             
             moderation_response = await self.supervisor.moderate_request(moderation_request)
@@ -396,8 +412,12 @@ class CLIChat:
             # Store user message
             self.history.add_message("user", user_input)
             
-            # Process with agent
-            response = await self.agent.process_query(user_input)
+            # Process with agent using conversation context
+            if hasattr(self.agent, 'process_query_with_conversation'):
+                response = await self.agent.process_query_with_conversation(user_input, conversation_id)
+            else:
+                # Fallback for agents without memory support
+                response = await self.agent.process_query(user_input)
             
             # Display response
             self._display_agent_response(response)

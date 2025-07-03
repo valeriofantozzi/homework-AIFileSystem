@@ -289,6 +289,9 @@ class SecureAgent:
         
         self.file_tools["answer_question_about_files"] = answer_question_tool
         
+        # Add memory tools for conversation tracking
+        self._add_memory_tools()
+        
         # Add advanced file operations (Task 4.3)
         self._add_advanced_file_operations()
         
@@ -386,6 +389,55 @@ Always explain your reasoning and what tools you're using."""
         Returns:
             AgentResponse with the result and metadata
         """
+        return await self.process_query_with_conversation(user_query, None)
+    
+    async def process_query_with_conversation(
+        self, 
+        user_query: str, 
+        conversation_id: Optional[str] = None
+    ) -> AgentResponse:
+        """
+        Process a user query with conversation context tracking.
+        
+        Args:
+            user_query: The user's question or request
+            conversation_id: Optional conversation ID for context tracking
+            
+        Returns:
+            AgentResponse with the result and metadata
+        """
+        # Generate conversation ID if not provided
+        if conversation_id is None:
+            conversation_id = str(uuid.uuid4())
+        
+        # Check for ambiguous responses if memory tools are available
+        if "check_ambiguous_response" in self.file_tools:
+            try:
+                ambiguous_check = self.file_tools["check_ambiguous_response"](
+                    conversation_id, user_query
+                )
+                if "AMBIGUOUS RESPONSE DETECTED" in ambiguous_check:
+                    self.logger.info(
+                        "Ambiguous response detected",
+                        conversation_id=conversation_id,
+                        query=user_query,
+                        check_result=ambiguous_check
+                    )
+                    # Add context to the user query for better processing
+                    if "get_conversation_context" in self.file_tools:
+                        context_info = self.file_tools["get_conversation_context"](conversation_id)
+                        user_query = f"""Context from previous conversation:
+{context_info}
+
+Current user response: {user_query}
+
+Please interpret the user's response in the context of the previous conversation."""
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to check for ambiguous response",
+                    error=str(e)
+                )
+        
         conversation_id = str(uuid.uuid4())
         context = ConversationContext(
             conversation_id=conversation_id,
@@ -423,6 +475,31 @@ Always explain your reasoning and what tools you're using."""
                 success=True
             )
             
+            # Store interaction in memory if memory tools are available
+            if "store_interaction" in self.file_tools:
+                try:
+                    self.file_tools["store_interaction"](
+                        conversation_id,
+                        user_query,
+                        response.response,
+                        response.tools_used,
+                        {
+                            "timestamp": context.timestamp.isoformat(),
+                            "success": True,
+                            "debug_mode": self.debug_mode
+                        }
+                    )
+                    self.logger.debug(
+                        "Interaction stored in memory",
+                        conversation_id=conversation_id
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        "Failed to store interaction in memory",
+                        conversation_id=conversation_id,
+                        error=str(e)
+                    )
+            
             # End operation tracking with success
             end_operation(
                 operation_id, 
@@ -448,6 +525,32 @@ Always explain your reasoning and what tools you're using."""
                 context=e.context
             )
             
+            # Store failed interaction in memory if available
+            error_response = ErrorFormatter.format_error_for_user(e)
+            if self.debug_mode:
+                error_response = ErrorFormatter.format_error_for_debug(e)
+                
+            if "store_interaction" in self.file_tools:
+                try:
+                    self.file_tools["store_interaction"](
+                        conversation_id,
+                        user_query,
+                        error_response,
+                        [],
+                        {
+                            "timestamp": context.timestamp.isoformat(),
+                            "success": False,
+                            "error_type": type(e).__name__,
+                            "error_code": e.error_code
+                        }
+                    )
+                except Exception as store_error:
+                    self.logger.warning(
+                        "Failed to store error interaction in memory",
+                        conversation_id=conversation_id,
+                        error=str(store_error)
+                    )
+            
             # End operation tracking with failure
             end_operation(
                 operation_id, 
@@ -455,13 +558,9 @@ Always explain your reasoning and what tools you're using."""
                 error_message=f"{type(e).__name__}: {e.message}"
             )
             
-            error_message = ErrorFormatter.format_error_for_user(e)
-            if self.debug_mode:
-                error_message = ErrorFormatter.format_error_for_debug(e)
-            
             return AgentResponse(
                 conversation_id=conversation_id,
-                response=error_message,
+                response=error_response,
                 tools_used=[],
                 success=False,
                 error_message=e.message
@@ -494,6 +593,28 @@ Always explain your reasoning and what tools you're using."""
             error_message = ErrorFormatter.format_error_for_user(agent_error)
             if self.debug_mode:
                 error_message = ErrorFormatter.format_error_for_debug(agent_error)
+            
+            # Store failed interaction in memory if available
+            if "store_interaction" in self.file_tools:
+                try:
+                    self.file_tools["store_interaction"](
+                        conversation_id,
+                        user_query,
+                        error_message,
+                        [],
+                        {
+                            "timestamp": context.timestamp.isoformat(),
+                            "success": False,
+                            "error_type": type(e).__name__,
+                            "unexpected_error": True
+                        }
+                    )
+                except Exception as store_error:
+                    self.logger.warning(
+                        "Failed to store unexpected error in memory",
+                        conversation_id=conversation_id,
+                        error=str(store_error)
+                    )
             
             return AgentResponse(
                 conversation_id=conversation_id,
@@ -767,8 +888,8 @@ Always explain your reasoning and what tools you're using."""
             },
             "examples": [
                 "find all .py files",
-                "list files with .json extension",
-                "show me all txt files"
+                "find all files like test_*",
+                "search for *.json files"
             ]
         }
 
@@ -779,9 +900,34 @@ Always explain your reasoning and what tools you're using."""
         self.file_tools["find_largest_file"] = find_largest_file
         self.file_tools["find_files_by_extension"] = find_files_by_extension
     
+    def _add_memory_tools(self) -> None:
+        """Add memory tools for conversation context tracking."""
+        try:
+            from tools.memory_tools.src.memory_tools import create_memory_tools
+            memory_tools = create_memory_tools()
+            
+            # Add memory tools to the agent's tool set
+            self.file_tools.update(memory_tools)
+            
+            self.logger.info(
+                "Memory tools integrated successfully",
+                tools_added=list(memory_tools.keys())
+            )
+            
+        except ImportError as e:
+            self.logger.warning(
+                "Memory tools not available - conversation context tracking disabled",
+                error=str(e)
+            )
+        except Exception as e:
+            self.logger.error(
+                "Failed to integrate memory tools",
+                error=str(e)
+            )
+    
     def get_available_tools(self) -> List[str]:
         """Get list of available tool names."""
-        return [
+        tools = [
             # Core CRUD operations (Task 4.1)
             "list_files", 
             "list_directories",  # Directory listing functionality
@@ -797,6 +943,22 @@ Always explain your reasoning and what tools you're using."""
             "find_largest_file",
             "find_files_by_extension"
         ]
+        
+        # Add memory tools if available
+        memory_tools = [
+            "get_conversation_context",
+            "store_interaction", 
+            "search_conversation_history",
+            "get_conversation_summary",
+            "check_ambiguous_response"
+        ]
+        
+        # Check which memory tools are actually available
+        for tool in memory_tools:
+            if tool in self.file_tools:
+                tools.append(tool)
+        
+        return tools
     
     def get_workspace_info(self) -> Dict[str, Any]:
         """Get information about the current workspace."""
@@ -869,4 +1031,3 @@ Always explain your reasoning and what tools you're using."""
             enhanced_tools[tool_name] = create_enhanced_wrapper(tool_name, tool_func)
         
         return enhanced_tools
-                         
