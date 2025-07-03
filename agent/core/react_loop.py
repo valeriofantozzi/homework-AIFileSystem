@@ -22,18 +22,7 @@ from agent.core.llm_tool_selector import LLMToolSelector, ToolSelectionResult
 
 
 class ReActPhase(Enum):
-    """Phases        # Check for "largest" file multi-step operations
-        if "largest" in query_lower or "biggest" in query_lower:
-            actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
-            if len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
-                # We listed files, now need to find the largest
-                return True
-            elif len(actions_taken) == 2 and actions_taken[-1].tool_name == "find_largest_file":
-                # We found the largest file, continue if user wants to read it
-                if "read" in query_lower or "content" in query_lower or "what" in query_lower:
-                    return True
-                return False  # Just wanted to know the largest file
-            return len(actions_taken) < 3  # Allow up to 3 steps for this queryct reasoning loop."""
+    """Phases of the ReAct reasoning loop."""
     THINK = "think"
     ACT = "act"
     OBSERVE = "observe"
@@ -113,7 +102,28 @@ class ConsolidatedReActResponse:
     def from_json_string(cls, json_str: str) -> 'ConsolidatedReActResponse':
         """Parse JSON response from LLM into structured format."""
         try:
-            data = json.loads(json_str)
+            # Clean up common JSON formatting issues
+            cleaned_json = json_str.strip()
+            
+            # Remove inline comments that might break JSON parsing
+            lines = cleaned_json.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                # Remove lines that are just comments
+                if line.strip().startswith('//'):
+                    continue
+                # Remove inline comments from JSON lines
+                if '//' in line and ('"' in line or '{' in line or '}' in line):
+                    comment_index = line.find('//')
+                    # Check if the // is inside a string literal
+                    string_count = line[:comment_index].count('"') - line[:comment_index].count('\\"')
+                    if string_count % 2 == 0:  # Even number means we're outside strings
+                        line = line[:comment_index].rstrip() + (',' if line[:comment_index].rstrip().endswith('"') else '')
+                cleaned_lines.append(line)
+            
+            cleaned_json = '\n'.join(cleaned_lines)
+            
+            data = json.loads(cleaned_json)
             return cls(
                 thinking=data.get("thinking", "No thinking provided"),
                 tool_name=data.get("tool_name"),
@@ -123,11 +133,30 @@ class ConsolidatedReActResponse:
                 confidence=data.get("confidence", 0.8)
             )
         except (json.JSONDecodeError, KeyError) as e:
+            # Try to extract useful information from malformed response
+            thinking_text = "I need to analyze this request and determine the appropriate action."
+            
+            # Look for thinking content in the malformed JSON
+            if "thinking" in json_str:
+                import re
+                thinking_match = re.search(r'"thinking":\s*"([^"]+)"', json_str)
+                if thinking_match:
+                    thinking_text = thinking_match.group(1)
+            
+            # Look for tool information
+            tool_name = None
+            if "tool_name" in json_str:
+                tool_match = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
+                if tool_match:
+                    tool_name = tool_match.group(1)
+            
             # Fallback to text parsing if JSON fails
             return cls(
-                thinking=f"Failed to parse structured response: {json_str}",
-                continue_reasoning=False,
-                final_response=json_str
+                thinking=thinking_text,
+                tool_name=tool_name,
+                tool_args={},
+                continue_reasoning=bool(tool_name),  # Continue if we found a tool
+                final_response=None  # Don't provide a final response, let the system handle it properly
             )
 
 
@@ -953,6 +982,30 @@ Think about whether I have enough information to answer the user's question or i
         # If no successful tool execution, provide a helpful message
         return "I wasn't able to complete your request successfully. Please try rephrasing your question."
     
+    def _generate_response_from_context(self, query: str, tool_chain_context: ToolChainContext) -> str:
+        """
+        Generate final response from accumulated context when max iterations reached.
+        
+        Args:
+            query: Original user query
+            tool_chain_context: Context from tool executions
+            
+        Returns:
+            Formatted response based on available context
+        """
+        # Find the most recent successful tool result
+        for step in reversed(self.scratchpad):
+            if step.phase == ReActPhase.ACT and step.tool_result and "error" not in step.tool_result.lower():
+                return step.tool_result
+        
+        # If no successful tool execution, check tool chain context
+        context_summary = tool_chain_context.get_context_summary()
+        if context_summary and context_summary != "No context available":
+            return f"Based on my exploration of the workspace:\n\n{context_summary}"
+        
+        # Fallback: provide helpful message
+        return "I wasn't able to complete your request successfully. Please try rephrasing your question or check if the files you're looking for exist."
+
     def _get_tools_used(self) -> List[str]:
         """Get list of tools used during reasoning."""
         tools_used = []
@@ -1122,14 +1175,22 @@ Think about whether I have enough information to answer the user's question or i
                 try:
                     response_text = await self.llm_response_func(consolidated_prompt)
                     parsed_response = ConsolidatedReActResponse.from_json_string(response_text)
+                    
+                    # Log successful parsing in debug mode
+                    if self.debug_mode:
+                        self.logger.debug("Successfully parsed LLM response", 
+                                        thinking=parsed_response.thinking[:100] + "...",
+                                        tool_name=parsed_response.tool_name)
+                        
                 except Exception as e:
-                    self.logger.warning(f"Failed to get LLM response or parse: {e}")
-                    # Fallback to text-based processing with a safe default
-                    error_text = f"Error in LLM call: {str(e)}"
+                    self.logger.warning(f"Failed to get LLM response: {e}")
+                    # Fallback to a safe default that will generate a helpful response
                     parsed_response = ConsolidatedReActResponse(
-                        thinking=error_text,
-                        continue_reasoning=False,
-                        final_response=error_text
+                        thinking="I need to help analyze this request. Let me start by examining the available information.",
+                        tool_name="list_all",  # Default to listing files for project analysis
+                        tool_args={},
+                        continue_reasoning=True,
+                        final_response=None
                     )
                 
                 # Record the thinking step
@@ -1274,8 +1335,47 @@ Think about whether I have enough information to answer the user's question or i
         # Get context summary from tool chain
         context_summary = tool_chain_context.get_context_summary()
         
-        return f"""You are a file system assistant using ReAct reasoning. Analyze the user's query and decide your next action.
+        # Detect if this is an analytical query that should conclude after gathering info
+        is_analytical_query = any(keyword in query.lower() for keyword in [
+            'analizza', 'analyze', 'summary', 'overview', 'describe', 'what is', 
+            'tell me about', 'explain', 'review'
+        ])
+        
+        analytical_guidance = ""
+        if is_analytical_query and len(reasoning_history) >= 6:
+            analytical_guidance = f"""
+ANALYSIS GUIDANCE: You've gathered substantial information ({len(reasoning_history)} steps). 
+Consider providing a comprehensive analysis summary as your final_response instead of continuing to gather more data.
+Set continue_reasoning=false and provide final_response when you have enough information to answer the user's question completely.
+"""
+        
+        iteration_guidance = ""
+        iteration_count = len([s for s in reasoning_history if s.phase == ReActPhase.ACT])
+        if iteration_count >= 5:
+            iteration_guidance = f"""
+COMPLETION GUIDANCE: You've used {iteration_count} tools already. Consider summarizing your findings 
+rather than using more tools. Set continue_reasoning=false and provide a comprehensive final_response.
+"""
+        
+        return f"""You are an AI File System Agent using ReAct reasoning for secure, multilingual file operations.
 
+AGENT CONTEXT:
+You are part of a secure AI system that helps users manage files within a sandboxed workspace. You support both English and Italian queries and operate through a supervised architecture that ensures safety and security.
+
+CAPABILITIES:
+- File operations within workspace boundaries (read, write, delete, list)
+- Multilingual support (English/Italian) with automatic translation
+- Project analysis and content examination
+- Pattern-based file searching and metadata extraction
+- AI-powered question answering about file contents
+
+SECURITY CONSTRAINTS:
+- Operations limited to assigned workspace only
+- No path traversal or system file access
+- All requests pre-screened by safety supervisor
+- Transparent reasoning process with ReAct pattern
+
+CURRENT REQUEST:
 USER QUERY: {query}
 WORKSPACE: {getattr(context, 'workspace_path', 'Unknown')}
 
@@ -1284,6 +1384,8 @@ PREVIOUS REASONING STEPS:
 
 CONTEXT FROM TOOLS:
 {context_summary}
+{analytical_guidance}
+{iteration_guidance}
 
 AVAILABLE TOOLS:
 {chr(10).join(available_tool_info)}
@@ -1306,9 +1408,10 @@ Respond with a JSON object in this exact format:
 
 IMPORTANT:
 - Use "null" for tool_name if no tool is needed
-- Set continue_reasoning to false only when you have a complete answer
-- If you use a tool, set continue_reasoning to true unless you're certain this will be the final step
-- The final_response should only be provided when continue_reasoning is false"""
+- Set continue_reasoning to false when you have enough information to provide a complete answer
+- For analytical queries (analyze, describe, overview), after gathering 3-5 pieces of information, provide a comprehensive summary
+- The final_response should synthesize all gathered information into a clear, helpful answer
+- If you've already used several tools and have good information, prefer completing the analysis over gathering more data"""
 
     async def _execute_selected_tool(
         self, 

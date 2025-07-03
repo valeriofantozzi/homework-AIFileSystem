@@ -318,7 +318,8 @@ class CLIChat:
         self.console.print(debug_panel)
         
         for i, step in enumerate(reasoning_steps, 1):
-            step_type = step.get('type', 'unknown')
+            # Use 'phase' field from ReAct loop instead of 'type'
+            step_type = step.get('phase', step.get('type', 'unknown')).lower()
             content = step.get('content', '')
             
             # Color code different step types
@@ -337,10 +338,10 @@ class CLIChat:
             
             self.console.print(f"[{style}]{icon} Step {i} ({step_type.upper()}):[/{style}]")
             
-            if step_type == 'act' and 'tool' in step:
-                # Display tool call details
-                tool_name = step.get('tool', 'unknown')
-                tool_args = step.get('args', {})
+            if step_type == 'act' and ('tool_name' in step or 'tool' in step):
+                # Display tool call details - check both field names for compatibility
+                tool_name = step.get('tool_name', step.get('tool', 'unknown'))
+                tool_args = step.get('tool_args', step.get('args', {}))
                 self.console.print(f"  Tool: [bold]{tool_name}[/bold]")
                 if tool_args:
                     args_json = json.dumps(tool_args, indent=2)
