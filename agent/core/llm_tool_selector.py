@@ -210,18 +210,19 @@ Please think through this step by step and provide your final recommendation.
         reasoning_lower = reasoning_result.lower()
         
         # Extract tool selection from reasoning with improved logic
-        selected_tool = "help"  # default fallback
+        selected_tool = None
         confidence = 0.5
         alternative_tools = []
         
-        # Look for explicit tool selection patterns
+        # Look for explicit tool selection patterns first
         tool_selection_patterns = [
-            r"selected?\s+tool:?\s*([a-zA-Z_]+)",
-            r"best\s+tool:?\s*([a-zA-Z_]+)",
-            r"use\s+([a-zA-Z_]+)\s+tool",
-            r"tool\s+([a-zA-Z_]+)\s+is\s+best",
-            r"recommend\s+([a-zA-Z_]+)",
-            r"choose\s+([a-zA-Z_]+)"
+            r"'([a-zA-Z_]+)'\s+tool",  # 'list_all' tool
+            r"\"([a-zA-Z_]+)\"\s+tool", # "list_all" tool
+            r"use\s+['\"]*([a-zA-Z_]+)['\"]*",  # use list_all
+            r"tool\s+['\"]*([a-zA-Z_]+)['\"]*",  # tool list_all
+            r"select\s+['\"]*([a-zA-Z_]+)['\"]*",  # select list_all
+            r"recommend\s+['\"]*([a-zA-Z_]+)['\"]*",  # recommend list_all
+            r"choose\s+['\"]*([a-zA-Z_]+)['\"]*"  # choose list_all
         ]
         
         import re
@@ -233,30 +234,44 @@ Please think through this step by step and provide your final recommendation.
                     selected_tool = potential_tool
                     break
         
-        # If no explicit pattern found, look for tool mentions with context
-        if selected_tool == "help":
+        # If no explicit pattern found, score tools by context and mentions
+        if not selected_tool:
             tool_scores = {}
             for tool_name in available_tools.keys():
-                # Count mentions and context clues
-                mentions = reasoning_lower.count(tool_name.lower())
+                score = 0
+                tool_lower = tool_name.lower()
                 
-                # Boost score for positive context
-                positive_context = [
-                    f"{tool_name} should",
-                    f"{tool_name} would",
-                    f"{tool_name} is the",
-                    f"use {tool_name}",
-                    f"{tool_name} best"
+                # Direct mentions
+                mentions = reasoning_lower.count(tool_lower)
+                score += mentions * 3
+                
+                # Positive context patterns
+                positive_patterns = [
+                    f"{tool_lower} is the",
+                    f"{tool_lower} would",
+                    f"{tool_lower} should",
+                    f"{tool_lower} best",
+                    f"{tool_lower} perfect",
+                    f"use {tool_lower}",
+                    f"select {tool_lower}",
+                    f"choose {tool_lower}"
                 ]
                 
-                context_score = sum(1 for phrase in positive_context if phrase in reasoning_lower)
-                tool_scores[tool_name] = mentions + (context_score * 2)
+                for pattern in positive_patterns:
+                    if pattern in reasoning_lower:
+                        score += 2
+                
+                tool_scores[tool_name] = score
             
             # Select tool with highest score
             if tool_scores:
                 selected_tool = max(tool_scores, key=tool_scores.get)
                 if tool_scores[selected_tool] == 0:
-                    selected_tool = "help"  # fallback if no clear winner
+                    selected_tool = None  # No clear winner
+        
+        # If still no tool selected, use safe default
+        if not selected_tool:
+            selected_tool = "help"
         
         # Determine confidence based on certainty indicators
         confidence_indicators = {

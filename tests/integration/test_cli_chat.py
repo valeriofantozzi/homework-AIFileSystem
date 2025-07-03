@@ -158,14 +158,34 @@ class TestCLIChat:
         assert cli_chat.agent.debug_mode == cli_chat.debug_mode
     
     def test_handle_clear_command(self, cli_chat):
-        """Test clear command handling."""
+        """Test clear command handling with coordinated memory clearing."""
         # Add some messages first
         cli_chat.history.add_message("user", "test")
         assert len(cli_chat.history.messages) > 0
         
-        result = cli_chat._handle_command("/clear")
-        assert result is True
-        assert len(cli_chat.history.messages) == 0
+        # Set up conversation ID
+        cli_chat._current_conversation_id = "test-conversation-123"
+        
+        # Mock the memory tools
+        mock_clear_tool = Mock(return_value="Successfully cleared conversation memory for test-conversation-123")
+        cli_chat.agent.file_tools = {'clear_conversation_memory': mock_clear_tool}
+        
+        with patch.object(cli_chat.console, 'print') as mock_print:
+            result = cli_chat._handle_command("/clear")
+            assert result is True
+            assert len(cli_chat.history.messages) == 0
+            
+            # Verify new conversation ID was generated
+            assert cli_chat._current_conversation_id != "test-conversation-123"
+            
+            # Verify memory tool was called
+            mock_clear_tool.assert_called_once_with("test-conversation-123")
+            
+            # Verify success message was printed
+            mock_print.assert_called_once()
+            printed_message = mock_print.call_args[0][0]
+            assert "CLI history cleared" in printed_message
+            assert "Successfully cleared conversation memory" in printed_message
     
     def test_handle_unknown_command(self, cli_chat):
         """Test unknown command handling."""

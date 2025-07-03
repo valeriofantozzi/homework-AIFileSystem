@@ -328,6 +328,73 @@ class MemoryManager:
             removed_count=len(conversations_to_remove),
             remaining_count=len(self.conversations)
         )
+    
+    def clear_conversation(self, conversation_id: str) -> bool:
+        """
+        Clear a specific conversation from memory and storage.
+        
+        Args:
+            conversation_id: The ID of the conversation to clear
+            
+        Returns:
+            True if conversation was cleared, False if not found
+        """
+        conversation = self.conversations.get(conversation_id)
+        
+        if not conversation:
+            self.logger.warning(
+                "Attempted to clear non-existent conversation",
+                conversation_id=conversation_id
+            )
+            return False
+        
+        # Remove storage file if it exists
+        if conversation.storage_path and conversation.storage_path.exists():
+            try:
+                conversation.storage_path.unlink()
+                self.logger.info(
+                    "Removed conversation storage file",
+                    conversation_id=conversation_id,
+                    file_path=str(conversation.storage_path)
+                )
+            except Exception as e:
+                self.logger.error(
+                    "Failed to remove conversation storage file",
+                    conversation_id=conversation_id,
+                    file_path=str(conversation.storage_path),
+                    error=str(e)
+                )
+        
+        # Remove from memory
+        self.conversations.pop(conversation_id)
+        
+        self.logger.info(
+            "Cleared conversation from memory",
+            conversation_id=conversation_id
+        )
+        
+        return True
+    
+    def clear_all_conversations(self) -> int:
+        """
+        Clear all conversations from memory and storage.
+        
+        Returns:
+            Number of conversations cleared
+        """
+        cleared_count = 0
+        conversation_ids = list(self.conversations.keys())
+        
+        for conversation_id in conversation_ids:
+            if self.clear_conversation(conversation_id):
+                cleared_count += 1
+        
+        self.logger.info(
+            "Cleared all conversations",
+            cleared_count=cleared_count
+        )
+        
+        return cleared_count
 
 
 class MemoryTool:
@@ -495,6 +562,15 @@ This appears to be a response to the previous question. Consider interpreting "{
         
         return "Query appears clear and not ambiguous."
     
+    def clear_conversation_memory(conversation_id: str) -> str:
+        """Clear conversation memory and associated storage files."""
+        memory_mgr = get_memory_manager()
+        
+        if memory_mgr.clear_conversation(conversation_id):
+            return f"Successfully cleared conversation memory for {conversation_id}"
+        else:
+            return f"No conversation found with ID {conversation_id}"
+    
     # Attach metadata for tool selection
     get_conversation_context.tool_metadata = {
         "description": "Get previous conversation context to understand user intent and follow-up queries",
@@ -565,10 +641,23 @@ This appears to be a response to the previous question. Consider interpreting "{
         ]
     }
     
+    clear_conversation_memory.tool_metadata = {
+        "description": "Clear conversation memory and remove associated storage files",
+        "parameters": {
+            "conversation_id": {"type": "string", "description": "The conversation ID to clear"}
+        },
+        "examples": [
+            "clear conversation memory",
+            "remove conversation history",
+            "reset conversation context"
+        ]
+    }
+    
     return {
         "get_conversation_context": get_conversation_context,
         "store_interaction": store_interaction,
         "search_conversation_history": search_conversation_history,
         "get_conversation_summary": get_conversation_summary,
         "check_ambiguous_response": check_ambiguous_response,
+        "clear_conversation_memory": clear_conversation_memory,
     }

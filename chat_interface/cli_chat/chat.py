@@ -145,6 +145,9 @@ class CLIChat:
             debug_mode=debug_mode
         )
         
+        # Initialize conversation tracking for coordinated memory management
+        self._current_conversation_id: Optional[str] = None
+        
         self.logger.info(
             "CLI Chat initialized",
             workspace_path=str(self.workspace_path),
@@ -181,7 +184,7 @@ class CLIChat:
         commands_table.add_row("/help", "Show this help message")
         commands_table.add_row("/debug", "Toggle debug mode")
         commands_table.add_row("/history", "Show conversation history")
-        commands_table.add_row("/clear", "Clear conversation history")
+        commands_table.add_row("/clear", "Clear conversation history and memory")
         commands_table.add_row("/workspace", "Show workspace information")
         commands_table.add_row("/quit", "Exit the chat")
         
@@ -217,8 +220,20 @@ class CLIChat:
             self._show_history()
         
         elif command == "/clear":
-            self.history.clear()
-            self.console.print("[green]Conversation history cleared[/green]")
+            # Ask for confirmation to prevent accidental data loss
+            if self.history.messages:
+                self.console.print(f"[yellow]You have {len(self.history.messages)} messages in your conversation history.[/yellow]")
+                confirm = Prompt.ask(
+                    "Are you sure you want to clear all conversation data?", 
+                    choices=["y", "n"], 
+                    default="n"
+                )
+                if confirm.lower() != "y":
+                    self.console.print("[dim]Clear operation cancelled.[/dim]")
+                    return True
+            
+            clear_result = self._clear_all_conversation_data()
+            self.console.print(f"[green]{clear_result}[/green]")
         
         elif command == "/workspace":
             self._show_workspace_info()
@@ -266,6 +281,71 @@ class CLIChat:
         info_table.add_row("Available Tools", ", ".join(workspace_info['available_tools']))
         
         self.console.print(info_table)
+    
+    def _clear_all_conversation_data(self) -> str:
+        """
+        Clear all conversation data including CLI history and memory tools.
+        This method follows the principle of coordinated clearing to ensure
+        both the CLI session and agent memory are synchronized.
+        
+        Returns:
+            Status message about the clearing operation
+        """
+        try:
+            # Get current conversation ID before clearing
+            conversation_id = getattr(self, '_current_conversation_id', None)
+            cli_messages_count = len(self.history.messages)
+            
+            self.logger.info(
+                "Starting coordinated clear operation",
+                conversation_id=conversation_id,
+                cli_messages_count=cli_messages_count
+            )
+            
+            # Clear CLI conversation history
+            self.history.clear()
+            
+            # Clear memory tools conversation data if conversation ID exists
+            memory_status = "No active conversation to clear from memory"
+            if conversation_id and hasattr(self.agent, 'file_tools'):
+                memory_tools = self.agent.file_tools
+                if 'clear_conversation_memory' in memory_tools:
+                    try:
+                        memory_result = memory_tools['clear_conversation_memory'](conversation_id)
+                        memory_status = f"Memory: {memory_result}"
+                        self.logger.info(
+                            "Memory tools cleared successfully",
+                            conversation_id=conversation_id,
+                            result=memory_result
+                        )
+                    except Exception as e:
+                        memory_status = f"Memory clearing failed: {str(e)}"
+                        self.logger.error(
+                            "Failed to clear memory tools",
+                            conversation_id=conversation_id,
+                            error=str(e)
+                        )
+            
+            # Generate new conversation ID for future interactions
+            old_conversation_id = conversation_id
+            self._current_conversation_id = str(uuid.uuid4())
+            
+            self.logger.info(
+                "Coordinated clear operation completed",
+                old_conversation_id=old_conversation_id,
+                new_conversation_id=self._current_conversation_id,
+                cli_messages_cleared=cli_messages_count
+            )
+            
+            # Return comprehensive status with message count
+            if cli_messages_count > 0:
+                return f"✅ Cleared {cli_messages_count} messages from CLI history. {memory_status}. New conversation started."
+            else:
+                return f"✅ CLI history was already empty. {memory_status}. New conversation started."
+            
+        except Exception as e:
+            self.logger.error("Error during coordinated clear operation", error=str(e))
+            return f"❌ Error during clear operation: {str(e)}"
     
     def _display_user_message(self, message: str):
         """Display user message with formatting."""

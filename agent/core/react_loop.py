@@ -183,7 +183,7 @@ class ReActLoop:
         debug_mode: bool = False,
         llm_response_func: Optional[callable] = None,
         mcp_thinking_tool: Optional[callable] = None,
-        use_llm_tool_selector: bool = True
+        use_llm_tool_selector: bool = True  # Default to True for intelligent behavior
     ) -> None:
         """
         Initialize the ReAct loop.
@@ -196,7 +196,7 @@ class ReActLoop:
             debug_mode: Enable detailed step tracking
             llm_response_func: Function to get LLM responses for reasoning
             mcp_thinking_tool: MCP sequential thinking tool for LLM-based tool selection
-            use_llm_tool_selector: Whether to use LLM-based tool selection instead of pattern matching
+            use_llm_tool_selector: Whether to use LLM-based tool selection (recommended: True)
         """
         self.model_provider = model_provider
         self.tools = tools
@@ -204,20 +204,27 @@ class ReActLoop:
         self.max_iterations = max_iterations
         self.debug_mode = debug_mode
         self.llm_response_func = llm_response_func
-        self.use_llm_tool_selector = use_llm_tool_selector
         
-        # Initialize LLM tool selector if enabled and thinking tool is available
+        # Always try to enable LLM tool selector for intelligent behavior
         self.llm_tool_selector = None
-        if use_llm_tool_selector and mcp_thinking_tool:
+        self.use_llm_tool_selector = False
+        
+        if mcp_thinking_tool:
             try:
+                from agent.core.llm_tool_selector import LLMToolSelector
                 self.llm_tool_selector = LLMToolSelector(mcp_thinking_tool)
-                self.logger.info("Initialized LLM-based tool selector")
+                self.use_llm_tool_selector = True
+                self.logger.info("✅ LLM-based intelligent tool selector enabled")
             except Exception as e:
-                self.logger.warning(f"Failed to initialize LLM tool selector: {e}, falling back to pattern matching")
+                self.logger.warning(f"❌ Failed to initialize LLM tool selector: {e}")
                 self.use_llm_tool_selector = False
-        elif use_llm_tool_selector:
-            self.logger.warning("LLM tool selector requested but no MCP thinking tool provided, using pattern matching")
+        else:
+            if use_llm_tool_selector:
+                self.logger.warning("⚠️  LLM tool selector requested but no MCP thinking tool provided")
             self.use_llm_tool_selector = False
+        
+        if not self.use_llm_tool_selector:
+            self.logger.info("Using simple contextual fallback for tool selection")
         
         # Reasoning state
         self.scratchpad: List[ReActStep] = []
@@ -592,196 +599,82 @@ Think about whether I have enough information to answer the user's question or i
         """
         Decide which tool to use based on current reasoning state.
         
-        Analyzes the conversation context and reasoning history to determine
-        the appropriate tool and arguments. Uses LLM-based selection when available,
-        falls back to pattern matching.
+        Uses pure LLM-based semantic reasoning to understand user intent
+        and select the most appropriate tool. No keyword matching is used.
         """
         if not self.scratchpad:
             return None
         
-        # Try LLM-based tool selection first if enabled
+        # Always prefer LLM-based tool selection for intelligent decisions
         if self.use_llm_tool_selector and self.llm_tool_selector:
             llm_result = await self._llm_based_tool_selection(context)
             if llm_result:
-                self.logger.info(f"Using LLM-selected tool: {llm_result['tool']}")
+                self.logger.info(f"LLM selected tool: {llm_result['tool']}")
                 return llm_result
             else:
-                self.logger.warning("LLM tool selection failed, falling back to pattern matching")
-        
-        # Fallback to pattern-based tool selection
-        return await self._pattern_based_tool_selection(context)
+                self.logger.warning("LLM tool selection failed - using simple contextual fallback")
+                # Simple contextual fallback without any keyword matching
+                return await self._simple_contextual_fallback(context)
+        else:
+            # If LLM selector is not available, use basic contextual logic
+            self.logger.warning("LLM tool selector not available - using basic contextual selection")
+            return await self._simple_contextual_fallback(context)
     
-    async def _pattern_based_tool_selection(self, context: Any) -> Optional[Dict[str, Any]]:
+    async def _simple_contextual_fallback(self, context: Any) -> Optional[Dict[str, Any]]:
         """
-        Original pattern-based tool selection logic as fallback.
+        Simple contextual fallback when LLM tool selection fails.
         
-        This method contains the original tool selection logic based on keyword
-        and pattern matching, kept as a reliable fallback.
+        Uses basic contextual logic without any keyword matching.
+        Relies on logical flow and previous actions to make reasonable decisions.
         """
-        # Get the current thought and build context
-        last_thought = self.scratchpad[-1].content
-        context_summary = self._build_context_summary()
+        # Get current context
         user_query = getattr(context, 'user_query', '')
-        
-        # Enhanced tool selection logic with better pattern matching
-        thought_lower = last_thought.lower()
-        query_lower = user_query.lower()
-        
-        # Check for multi-step operations first
         actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
         
-        # Handle "largest" file queries (multi-step: list → find_largest → read)
-        if ("largest" in query_lower or "biggest" in query_lower):
-            if len(actions_taken) == 0:
-                # First step: list files to see what's available
-                return {"tool": "list_files", "args": {}}
-            elif len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
-                # Second step: find the largest file
-                return {"tool": "find_largest_file", "args": {}}
-            elif len(actions_taken) == 2 and actions_taken[-1].tool_name == "find_largest_file":
-                # Third step: read the largest file if requested
-                if "read" in query_lower or "content" in query_lower or "what" in query_lower:
-                    # Extract filename from the find_largest_file result
-                    largest_result = actions_taken[-1].tool_result
-                    if largest_result and largest_result.strip():
-                        # Parse the formatted result to extract filename
-                        # Expected format: "✅ Largest file: filename.txt (123 bytes) (0.00s)"
-                        import re
-                        filename_match = re.search(r'Largest file:\s*([^\s(]+)', largest_result)
-                        if filename_match:
-                            filename = filename_match.group(1)
-                            return {"tool": "read_file", "args": {"filename": filename}}
-                return None  # Just wanted to know the largest file
+        # If we have taken previous actions, try to continue logically
+        if actions_taken:
+            last_action = actions_taken[-1].tool_name
+            last_result = actions_taken[-1].tool_result if hasattr(actions_taken[-1], 'tool_result') else ""
+            
+            # Logical continuation based on previous action
+            if last_action == "list_files" and last_result:
+                # If we just listed files, user might want to read one
+                # Try to extract a filename from context
+                filename = self._extract_filename_from_context(context, None)
+                if filename:
+                    return {"tool": "read_file", "args": {"filename": filename}}
+            
+            elif last_action == "find_largest_file" and last_result:
+                # If we found the largest file, user might want to read it
+                filename = self._extract_filename_from_result(last_result)
+                if filename:
+                    return {"tool": "read_file", "args": {"filename": filename}}
         
-        # If this is a multi-step request ("first X, then Y"), continue with next step
-        elif ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
-            if len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
-                # We did list_files, now check if we need to read something
-                if "read" in query_lower:
-                    filename = self._extract_filename(last_thought, user_query)
-                    if filename:
-                        return {"tool": "read_file", "args": {"filename": filename}}
+        # If no logical continuation, make a safe default choice
+        # List all files and directories to give user comprehensive view
+        return {"tool": "list_all", "args": {}}
+    
+    def _extract_filename_from_result(self, result: str) -> Optional[str]:
+        """Extract filename from a tool result string."""
+        if not result:
+            return None
         
-        # Check for explicit tool mentions first
-        if "find_files_by_pattern" in query_lower:
-            # Extract pattern from query
-            pattern = self._extract_pattern(user_query)
-            if pattern:
-                return {"tool": "find_files_by_pattern", "args": {"pattern": pattern}}
+        # Look for common filename patterns in results
+        import re
+        patterns = [
+            r'Largest file:\s*([^\s(]+)',
+            r'File:\s*([^\s]+)',
+            r'filename:\s*([^\s]+)',
+            r'([^\s]+\.[a-zA-Z0-9]+)'  # Basic file extension pattern
+        ]
         
-        if "get_file_info" in query_lower:
-            # Extract filename from query
-            filename = self._extract_filename(last_thought, user_query)
-            if filename:
-                return {"tool": "get_file_info", "args": {"filename": filename}}
-        
-        if "read_newest_file" in query_lower:
-            return {"tool": "read_newest_file", "args": {}}
-        
-        # Analyze what the user wants and what we've learned so far
-        
-        # Check for directory-specific requests first
-        if (("directories" in query_lower or "directory" in query_lower or "folders" in query_lower or 
-             "folder" in query_lower or "cartelle" in query_lower) and
-            ("list" in query_lower or "show" in query_lower or "mostra" in query_lower or 
-             "lista" in query_lower) and
-            not ("file" in query_lower)):  # Only directories, not files+directories
-            if self.logger:
-                self.logger.debug("Directory listing request detected", query=user_query)
-            return {"tool": "list_directories", "args": {}}
-        
-        # Check for Italian "tutti i file e cartelle" pattern - this should select list_all
-        elif (("tutti" in query_lower or "all" in query_lower) and 
-              (("file" in query_lower and ("cartelle" in query_lower or "directory" in query_lower or "directories" in query_lower)) or
-               ("files" in query_lower and ("cartelle" in query_lower or "directory" in query_lower or "directories" in query_lower)) or
-               ("lista" in query_lower and "file" in query_lower and "cartelle" in query_lower))):
-            if self.logger:
-                self.logger.debug("Italian files and directories request detected", query=user_query)
-            return {"tool": "list_all", "args": {}}
-        
-        # Check for "list all" or "show all" - use list_all that shows both files and directories
-        elif (("list" in query_lower and "all" in query_lower) or 
-              ("show" in query_lower and "all" in query_lower) or
-              ("lista" in query_lower and "tutti" in query_lower) or
-              # Handle "file e cartelle" - files and directories together
-              ("file" in query_lower and "cartelle" in query_lower) or
-              ("files" in query_lower and "cartelle" in query_lower)):
-            return {"tool": "list_all", "args": {}}
-        
-        # Check for explicit file listing (avoid conflict with directory listing)
-        elif ("list" in query_lower and "files" in query_lower) or "what files" in query_lower:
-            return {"tool": "list_files", "args": {}}
-        
-        # Default file listing only if "list" appears without directory context
-        elif ("list" in thought_lower and 
-              not any(dir_word in thought_lower for dir_word in ["directories", "directory", "folders", "folder", "cartelle"])):
-            if self.logger:
-                self.logger.debug("Default file listing triggered", thought=last_thought[:100], query=user_query)
-            return {"tool": "list_files", "args": {}}
-        
-        # Look for "newest" or "latest" file patterns
-        elif ("newest" in query_lower or "latest" in query_lower or "most recent" in query_lower):
-            if "read" in query_lower or "content" in query_lower or "what" in query_lower:
-                # Use the direct newest file function
-                return {"tool": "read_newest_file", "args": {}}
-            else:
-                return {"tool": "list_files", "args": {}}
-        
-        # Look for pattern matching requests
-        elif ("find" in query_lower and "pattern" in query_lower) or ("containing" in query_lower):
-            pattern = self._extract_pattern(user_query)
-            if pattern:
-                return {"tool": "find_files_by_pattern", "args": {"pattern": pattern}}
-            else:
-                return {"tool": "list_files", "args": {}}
-        
-        # Look for file information requests
-        elif ("information" in query_lower or "info" in query_lower or "details" in query_lower or "metadata" in query_lower):
-            filename = self._extract_filename(last_thought, user_query)
-            if filename:
-                return {"tool": "get_file_info", "args": {"filename": filename}}
-            else:
-                return {"tool": "list_files", "args": {}}
-        
-        # Look for filename extraction patterns for reading
-        elif "read" in thought_lower or "content" in thought_lower or "open" in thought_lower:
-            filename = self._extract_filename(last_thought, user_query)
-            if filename and filename != "LATEST_FILE":
-                return {"tool": "read_file", "args": {"filename": filename}}
-            elif filename == "LATEST_FILE":
-                return {"tool": "read_newest_file", "args": {}}
-            else:
-                # If no specific filename, might need to list files first
-                return {"tool": "list_files", "args": {}}
-        
-        elif "write" in thought_lower or "create" in thought_lower or "save" in thought_lower:
-            filename = self._extract_filename(last_thought, user_query)
-            content = self._extract_content(last_thought, user_query)
-            if filename and content:
-                return {"tool": "write_file", "args": {"filename": filename, "content": content}}
-            else:
-                return None  # Need more information
-        
-        elif "delete" in thought_lower or "remove" in thought_lower:
-            filename = self._extract_filename(last_thought, user_query)
-            if filename:
-                return {"tool": "delete_file", "args": {"filename": filename}}
-            else:
-                return {"tool": "list_files", "args": {}}  # List files to see what can be deleted
-        
-        elif "question" in thought_lower or "answer" in thought_lower or "about" in thought_lower:
-            query_text = self._extract_question(last_thought, user_query)
-            if query_text:
-                return {"tool": "answer_question_about_files", "args": {"query": query_text}}
-        
-        # If we can't determine a specific action, default to listing files
-        # This helps the agent understand what's available
-        actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
-        if not actions_taken:
-            return {"tool": "list_files", "args": {}}
+        for pattern in patterns:
+            match = re.search(pattern, result)
+            if match:
+                return match.group(1)
         
         return None
-    
+
     async def _llm_based_tool_selection(self, context: Any) -> Optional[Dict[str, Any]]:
         """
         Use LLM-based reasoning to select the most appropriate tool.
@@ -983,29 +876,22 @@ Think about whether I have enough information to answer the user's question or i
         return formatted_steps
     
     def _extract_filename(self, thought: str, query: str) -> Optional[str]:
-        """Extract filename from thought or query text."""
+        """Extract filename from thought or query text using simple pattern matching."""
         import re
         
-        # Look for common filename patterns
+        # Look for common filename patterns with file extensions
         filename_patterns = [
-            r"filename[:\s]+([^\s,\.]+\.[a-zA-Z0-9]+)",
-            r"file[:\s]+([^\s,\.]+\.[a-zA-Z0-9]+)",
-            r"read[:\s]+([^\s,\.]+\.[a-zA-Z0-9]+)",
             r"([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)",  # General filename pattern
             r"'([^']+\.[a-zA-Z0-9]+)'",  # Quoted filename
             r'"([^"]+\.[a-zA-Z0-9]+)"'   # Double quoted filename
         ]
         
-        text = f"{thought} {query}".lower()
+        text = f"{thought} {query}"
         
         for pattern in filename_patterns:
             match = re.search(pattern, text)
             if match:
                 return match.group(1)
-        
-        # Special keywords
-        if "newest" in text or "latest" in text:
-            return "LATEST_FILE"
         
         return None
     
