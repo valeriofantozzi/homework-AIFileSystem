@@ -351,20 +351,18 @@ class RequestSupervisor:
                                   error=str(ai_error))
                 return self._enhanced_fallback_moderation(request, filter_result)
             
-            # Parse the response
-            if hasattr(result, 'data'):
-                response_data = result.data
-            else:
-                # Handle different response formats
-                response_data = result if isinstance(result, dict) else str(result)
-                
-            # If response is a string, try to parse as JSON
-            if isinstance(response_data, str):
-                try:
-                    response_data = json.loads(response_data)
-                except json.JSONDecodeError:
-                    # If not JSON, use enhanced fallback
-                    return self._enhanced_fallback_moderation(request, filter_result)
+            # Extract string content from pydantic-ai result objects.
+            # Parse the response using helper method
+            response_data = self._extract_agent_result(result)
+            
+            # Parse the response text as JSON
+            try:
+                response_data = json.loads(response_data) if isinstance(response_data, str) else response_data
+            except json.JSONDecodeError:
+                # If not JSON, use enhanced fallback
+                self.logger.warning("Failed to parse agent response as JSON", 
+                                  response_preview=str(response_data)[:100])
+                return self._enhanced_fallback_moderation(request, filter_result)
             
             # Validate response structure
             if not isinstance(response_data, dict):
@@ -398,7 +396,7 @@ class RequestSupervisor:
                     details={
                         "conversation_id": request.conversation_id,
                         "query_preview": request.user_query[:100],
-                        "intent": moderation_response.intent.value if moderation_response.intent else "unknown",
+                        "intent": moderation_response.intent.intent_type.value if moderation_response.intent else "unknown",
                         "filter_confidence": filter_result.confidence
                     },
                     severity="INFO"
@@ -616,10 +614,11 @@ Be conservative with safety but helpful with legitimate requests."""
         
         try:
             # Create the agent with safety-focused system prompt
+            # Use string result to avoid tool call issues with OpenAI
             self.agent = Agent(
                 f"{provider_name}:{model_name}",
                 system_prompt=self.system_prompt,
-                result_type=dict
+                result_type=str  # Return string to avoid tool call confusion
             )
             
             self.logger.info("Supervision agent configured successfully")
@@ -629,15 +628,33 @@ Be conservative with safety but helpful with legitimate requests."""
             # Continue without agent - fallback moderation will be used
             self.agent = None
     
-    def _create_error_response(self, conversation_id: str, error_msg: str) -> ModerationResponse:
-        """Create a safe error response."""
-        return ModerationResponse(
-            decision=ModerationDecision.REJECTED,
-            allowed=False,
-            intent=None,
-            reason=f"Supervision system error: {error_msg}",
-            risk_factors=["system_error"]
-        )
+    def _extract_agent_result(self, result) -> str:
+        """
+        Extract string content from pydantic-ai result objects.
+        
+        Handles different possible result structures from various pydantic-ai versions
+        and model providers to ensure robust result extraction.
+        
+        Args:
+            result: The result object from pydantic-ai Agent.run()
+            
+        Returns:
+            String content extracted from the result
+        """
+        # Try different common attributes for result content
+        if hasattr(result, 'data'):
+            return str(result.data)
+        elif hasattr(result, 'content'):
+            return result.content  
+        elif hasattr(result, 'text'):
+            return result.text
+        elif hasattr(result, 'output'):
+            return result.output
+        elif hasattr(result, 'message'):
+            return str(result.message)
+        else:
+            # Fallback: convert result to string
+            return str(result)
 
     def create_request(self, user_query: str, conversation_id: str) -> ModerationRequest:
         """

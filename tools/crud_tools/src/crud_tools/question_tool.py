@@ -23,6 +23,34 @@ except ImportError:
     CONFIG_AVAILABLE = False
 
 
+def _extract_result_content(result: Any) -> str:
+    """
+    Extract content from pydantic-ai result object.
+
+    Handles different possible result structures that pydantic-ai might return.
+
+    Args:
+        result: Result object from pydantic-ai agent.run()
+
+    Returns:
+        String content from the result.
+    """
+    # Try different possible attributes that pydantic-ai might use
+    if hasattr(result, 'output'):
+        return str(result.output)
+    elif hasattr(result, 'data'):
+        return str(result.data)
+    elif hasattr(result, 'content'):
+        return str(result.content)
+    elif hasattr(result, 'text'):
+        return str(result.text)
+    elif hasattr(result, 'message'):
+        return str(result.message)
+    else:
+        # Fallback: convert result to string directly
+        return str(result)
+
+
 async def answer_question_about_files(
     workspace: Workspace,
     query: str,
@@ -127,7 +155,8 @@ async def answer_question_about_files(
         # Get response from LLM
         try:
             result = await analysis_agent.run(prompt)
-            return result.output
+            # Use helper function to extract content from different result structures
+            return _extract_result_content(result)
         except Exception as llm_error:
             # If the primary model fails (e.g., missing API key), try fallback
             error_msg = str(llm_error).lower()
@@ -146,7 +175,9 @@ async def answer_question_about_files(
                             ),
                         )
                         fallback_result = await fallback_agent.run(prompt)
-                        return f"[Using fallback model due to {llm_model.split(':')[0]} API key issue] {fallback_result.output}"
+                        # Use helper function to extract content from fallback result
+                        response = _extract_result_content(fallback_result)
+                        return f"[Using fallback model due to {llm_model.split(':')[0]} API key issue] {response}"
                     except Exception:
                         # If fallback also fails, return informative error
                         return f"Unable to analyze files: {llm_model.split(':')[0]} API key not configured and OpenAI fallback also failed. Please configure API keys or use local models."
@@ -164,7 +195,7 @@ async def answer_question_about_files(
 def create_question_tool_function(workspace: Workspace, role: str = "file_analysis", **kwargs: Any):
     """
     Create a question tool function for manual registration with agents.
-    
+
     The created function uses the centralized model configuration to select
     the appropriate LLM for the specified role.
 
@@ -191,8 +222,8 @@ def create_question_tool_function(workspace: Workspace, role: str = "file_analys
             A synthesized answer based on analysis of file contents.
         """
         return await answer_question_about_files(
-            workspace=workspace, 
-            query=query, 
+            workspace=workspace,
+            query=query,
             role=role,
             **kwargs
         )

@@ -12,7 +12,7 @@ providers:
     models:
       fast: "gpt-4.1-nano"              # Lightweight model for quick tasks
       standard: "gpt-4.1"               # Standard model for complex reasoning
-      reasoning: "o3-mini"          # Advanced reasoning model
+      reasoning: "o3-mini"              # Advanced reasoning model
     default_params:
       temperature: 0.1
       max_tokens: 32768
@@ -77,22 +77,23 @@ roles:
   agent: "openai:standard"         # Main ReAct reasoning loop
   
   # File system operations
-  file_analysis: "gemini:standard" # Analyzing file contents & questions
-  file_summary: "openai:fast"      # Quick file summaries
+  file_analysis: "openai:fast" # Analyzing file contents & questions
+  file_summary: "openai:standard"      # Quick file summaries
   
   # User interfaces  
-  chat: "anthropic:standard"       # Interactive chat with users
+  chat: "openai:standard"       # Interactive chat with users
   cli_chat: "openai:standard"      # CLI-based interactions
   
   # Development & testing
-  test_mock: "local:ollama:fast"   # For unit tests
+  # test_mock: "local:ollama:fast"   # For unit tests
+  test_mock: "openai:fast"   # For unit tests
   development: "openai:fast"       # Fast iteration during dev
   
   # Specialized tasks
-  code_review: "anthropic:standard"  # Code analysis
+  code_review: "openai:standard"  # Code analysis
   documentation: "openai:standard"   # Generating docs
-  debug: "gemini:advanced"          # Complex debugging
-  coding: "groq:coding"             # Code generation
+  debug: "openai:standard"          # Complex debugging
+  coding: "openai:standard"             # Code generation
 
 # Environment-specific overrides
 environments:
@@ -102,6 +103,8 @@ environments:
     roles:
       agent: "openai:fast"
       chat: "openai:fast"
+      file_analysis: "openai:fast"  # Ensure consistent model usage
+      supervisor: "openai:fast"     # Add supervisor role for consistency
   
   testing:
     # Use local models for reliable testing
@@ -145,7 +148,7 @@ defaults:
 # Feature flags for experimental features
 features:
   # Enable advanced reasoning models for complex tasks
-  enable_reasoning_models: false
+  enable_reasoning_models: true
   
   # Enable multi-provider load balancing
   enable_load_balancing: false
