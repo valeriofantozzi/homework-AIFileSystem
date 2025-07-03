@@ -15,6 +15,9 @@ from pydantic import BaseModel, Field
 class MCPMethod(str, Enum):
     """Supported MCP methods for file system operations."""
     
+    # Protocol initialization
+    INITIALIZE = "initialize"
+    
     # Tool discovery and execution
     TOOLS_LIST = "tools/list"
     TOOLS_CALL = "tools/call"
@@ -151,6 +154,26 @@ class MetricsResponse(BaseModel):
     error_count: int = Field(..., description="Total number of errors")
     average_response_time: float = Field(..., description="Average response time in seconds")
     uptime: float = Field(..., description="Uptime in seconds")
+
+
+class InitializeResponse(BaseModel):
+    """MCP initialize method response model."""
+    
+    protocolVersion: str = Field("2024-11-05", description="MCP protocol version")
+    capabilities: Dict[str, Any] = Field(
+        default_factory=lambda: {
+            "tools": {},
+            "resources": {}
+        }, 
+        description="Server capabilities"
+    )
+    serverInfo: Dict[str, str] = Field(
+        default_factory=lambda: {
+            "name": "AI FileSystem MCP Server",
+            "version": "1.0.0"
+        },
+        description="Server information"
+    )
 
 
 class DiagnosticsResponse(BaseModel):

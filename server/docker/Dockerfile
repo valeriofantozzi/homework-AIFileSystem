@@ -1,5 +1,5 @@
 # Multi-stage build for optimal image size and security
-FROM python:3.12-slim as builder
+FROM python:3.12-slim AS builder
 
 # Install system dependencies for building
 RUN apt-get update && apt-get install -y \
@@ -9,16 +9,16 @@ RUN apt-get update && apt-get install -y \
 # Set work directory
 WORKDIR /app
 
-# Copy requirements first (Docker layer caching optimization)
-COPY pyproject.toml poetry.lock ./
+# Copy the complete application structure (needed for local dependencies)
+COPY . .
 
-# Install Poetry and dependencies
-RUN pip install poetry==1.7.1 && \
+# Install Poetry and dependencies with proper local package handling
+RUN pip install poetry==1.8.4 && \
     poetry config virtualenvs.create false && \
-    poetry install --only=main --no-dev
+    poetry install --only main --no-interaction
 
 # Production stage
-FROM python:3.12-slim as production
+FROM python:3.12-slim AS production
 
 # Create non-root user for security
 RUN groupadd --gid 1000 mcp && \

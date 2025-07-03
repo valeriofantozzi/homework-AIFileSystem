@@ -29,6 +29,7 @@ from .models import (
     ConversationContext,
     DiagnosticsResponse,
     HealthStatus,
+    InitializeResponse,
     MCPError,
     MCPErrorCode,
     MCPRequest,
@@ -352,7 +353,14 @@ async def mcp_endpoint(request: MCPRequest) -> MCPResponse:
     
     try:
         # Handle different MCP methods
-        if request.method == "tools/list":
+        if request.method == "initialize":
+            # Handle MCP protocol initialization
+            return MCPResponse(
+                id=request.id,
+                result=InitializeResponse().model_dump()
+            )
+        
+        elif request.method == "tools/list":
             tools = mcp_server.get_available_tools()
             return MCPResponse(
                 id=request.id,

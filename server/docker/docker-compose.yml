@@ -15,8 +15,6 @@ services:
     volumes:
       # Mount workspace for persistent file operations
       - workspace-data:/app/workspace
-      # Mount logs directory for monitoring
-      - ./logs:/app/logs
     networks:
       - mcp-network
     restart: unless-stopped
@@ -39,10 +37,6 @@ services:
 volumes:
   workspace-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/workspace
 
 networks:
   mcp-network:

@@ -38,6 +38,10 @@ warning() {
 build() {
     log "Building Docker image: ${IMAGE_NAME}"
     
+    # Ensure tool directories exist for Docker build context
+    mkdir -p "${PROJECT_ROOT}/tools/workspace_fs"
+    mkdir -p "${PROJECT_ROOT}/tools/crud_tools"
+    
     cd "${PROJECT_ROOT}"
     docker build -f server/docker/Dockerfile -t "${IMAGE_NAME}:latest" .
     

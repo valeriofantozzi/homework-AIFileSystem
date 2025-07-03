@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "aiFilesystem": {
+      "url": "http://localhost:8000/mcp",
+      "description": "AI File System MCP Server for Cursor IDE",
+      "capabilities": [
+        "list_files",
+        "read_file",
+        "write_file",
+        "delete_file",
+        "list_directories",
+        "list_all",
+        "list_tree",
+        "answer_question_about_files"
+      ]
+    }
+  }
+}

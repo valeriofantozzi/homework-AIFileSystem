@@ -1,3 +1,12 @@
 {
-  "servers": {}
+  "servers": {
+    "ai-filesystem": {
+      // Use stdio-based MCP server for proper VSCode integration
+      "command": "sh",
+      "args": [
+        "-c",
+        "docker ps -q --filter name=ai-filesystem-mcp-vscode | xargs -r docker stop || true && docker run --rm -i --name ai-filesystem-mcp-vscode -v \"${workspaceFolder}:/app/workspace\" -e WORKSPACE_PATH=/app/workspace -e PYTHONPATH=/app ai-filesystem-mcp:latest python server/stdio_mcp_server.py"
+      ]
+    }
+  }
 }
