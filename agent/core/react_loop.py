@@ -1198,6 +1198,9 @@ rather than using more tools. Set continue_reasoning=false and provide a compreh
 AGENT CONTEXT:
 You are part of a secure AI system that helps users manage files within a sandboxed workspace. You support both English and Italian queries and operate through a supervised architecture that ensures safety and security.
 
+LANGUAGE RESPONSE RULE:
+Always respond in the same language as the user's question.  Match the user's language naturally and consistently throughout your response.
+
 CAPABILITIES:
 - File operations within workspace boundaries (read, write, delete, list)
 - Multilingual support (English/Italian) with automatic translation
