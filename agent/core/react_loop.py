@@ -471,7 +471,30 @@ Think about whether I have enough information to answer the user's question or i
             return {"tool": "read_newest_file", "args": {}}
         
         # Analyze what the user wants and what we've learned so far
-        if "list" in thought_lower or "files" in thought_lower or "what files" in query_lower:
+        
+        # Check for directory-specific requests first
+        if (("directories" in query_lower or "directory" in query_lower or "folders" in query_lower or 
+             "folder" in query_lower or "cartelle" in query_lower) and
+            ("list" in query_lower or "show" in query_lower or "mostra" in query_lower or 
+             "lista" in query_lower)):
+            if self.logger:
+                self.logger.debug("Directory listing request detected", query=user_query)
+            return {"tool": "list_directories", "args": {}}
+        
+        # Check for "list all" or "show all" - use list_all that shows both files and directories
+        elif (("list" in query_lower and "all" in query_lower) or 
+              ("show" in query_lower and "all" in query_lower)):
+            return {"tool": "list_all", "args": {}}
+        
+        # Check for explicit file listing (avoid conflict with directory listing)
+        elif ("list" in query_lower and "files" in query_lower) or "what files" in query_lower:
+            return {"tool": "list_files", "args": {}}
+        
+        # Default file listing only if "list" appears without directory context
+        elif ("list" in thought_lower and 
+              not any(dir_word in thought_lower for dir_word in ["directories", "directory", "folders", "folder", "cartelle"])):
+            if self.logger:
+                self.logger.debug("Default file listing triggered", thought=last_thought[:100], query=user_query)
             return {"tool": "list_files", "args": {}}
         
         # Look for "newest" or "latest" file patterns

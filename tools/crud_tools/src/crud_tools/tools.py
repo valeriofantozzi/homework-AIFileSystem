@@ -66,6 +66,44 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
         except Exception as e:
             raise WorkspaceError(f"Failed to list files: {e}") from e
 
+    def list_directories() -> list[str]:
+        """
+        List all directories in the workspace, sorted by modification time (newest first).
+
+        This tool returns only directories, excluding files and hidden directories.
+        Directories are sorted by their last modification time with the most recently
+        modified directories appearing first in the list.
+
+        Returns:
+            List of directory names sorted by modification time.
+
+        Raises:
+            WorkspaceError: If the workspace cannot be accessed or read.
+        """
+        try:
+            return fs_tools.list_directories()
+        except Exception as e:
+            raise WorkspaceError(f"Failed to list directories: {e}") from e
+
+    def list_all() -> list[str]:
+        """
+        List all files and directories in the workspace, sorted by modification time.
+
+        This tool returns both files and directories, with directories suffixed by '/'
+        for easy identification. Items are sorted by their last modification time
+        with the most recently modified items appearing first.
+
+        Returns:
+            List of file and directory names, directories suffixed with '/'.
+
+        Raises:
+            WorkspaceError: If the workspace cannot be accessed or read.
+        """
+        try:
+            return fs_tools.list_all()
+        except Exception as e:
+            raise WorkspaceError(f"Failed to list workspace contents: {e}") from e
+
     def read_file(filename: str) -> str:
         """
         Read the complete content of a file from the workspace.
@@ -148,6 +186,8 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
     # Return tool functions as dictionary
     return {
         "list_files": list_files,
+        "list_directories": list_directories,
+        "list_all": list_all,
         "read_file": read_file,
         "write_file": write_file,
         "delete_file": delete_file,

@@ -32,6 +32,8 @@ class IntentType(Enum):
     FILE_WRITE = "file_write"
     FILE_DELETE = "file_delete"
     FILE_LIST = "file_list"
+    FILE_LIST_DIRS = "file_list_dirs"
+    FILE_LIST_ALL = "file_list_all"
     FILE_QUESTION = "file_question"
     PROJECT_ANALYSIS = "project_analysis"
     GENERAL_QUESTION = "general_question"
@@ -168,7 +170,11 @@ class RequestSupervisor:
             'read': [r'read.*file', r'show.*content', r'display.*file'],
             'write': [r'write.*file', r'create.*file', r'save.*to'],
             'modify': [r'modify.*file', r'update.*file', r'edit.*file', r'change.*file'], 
-            'list': [r'list.*files', r'show.*files', r'directory'],
+            'list': [r'list.*files', r'show.*files', r'list.*directories', r'show.*directories',
+                    r'list.*folders', r'show.*folders', r'directory', r'directories', r'folders',
+                    r'lista.*file', r'mostra.*file', r'lista.*directory', r'mostra.*cartelle',
+                    r'cartelle', r'.*directory.*list', r'.*folder.*list', r'folder.*structure',
+                    r'list.*all', r'show.*all'],
             'delete': [r'delete.*file', r'remove.*file'],
             'question': [r'what.*in', r'analyze.*files', r'find.*in'],
             'project_analysis': [r'analizza.*progetto', r'analyze.*project', r'project.*analysis', 
@@ -209,7 +215,8 @@ class RequestSupervisor:
             'create', 'save', 'content', 'document', 'text', 'data',
             'modify', 'update', 'edit', 'change', 'append', 'add',
             'project', 'analyze', 'analizza', 'overview', 'structure', 'summary',
-            'progetto', 'panoramica', 'struttura', 'codice', 'review'
+            'progetto', 'panoramica', 'struttura', 'codice', 'review',
+            'directories', 'folders', 'cartelle', 'lista', 'mostra'
         ]
         
         if not any(keyword in query_lower for keyword in file_related_keywords):

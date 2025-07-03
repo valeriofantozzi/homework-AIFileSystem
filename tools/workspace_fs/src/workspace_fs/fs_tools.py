@@ -266,6 +266,87 @@ class FileSystemTools:
         except Exception as e:
             raise WorkspaceError(f"Cannot delete file: {filename}") from e
 
+    def list_directories(self) -> list[str]:
+        """
+        List all directories in the workspace, sorted by modification time.
+
+        Returns directories only (not files), excluding hidden directories,
+        sorted by modification time (newest first).
+
+        Returns:
+            List of directory names sorted by modification time.
+
+        Raises:
+            RateLimitError: If rate limit is exceeded.
+            WorkspaceError: If workspace access fails.
+        """
+        self._check_rate_limit()
+
+        try:
+            dirs_with_mtime = []
+
+            for item in self._workspace.root.iterdir():
+                # Skip files and hidden directories
+                if item.is_dir() and not item.name.startswith("."):
+                    try:
+                        mtime = item.stat().st_mtime
+                        dirs_with_mtime.append((item.name, mtime))
+                    except (OSError, PermissionError):
+                        # Skip directories we can't access
+                        continue
+
+            # Sort by modification time (newest first)
+            dirs_with_mtime.sort(key=lambda x: x[1], reverse=True)
+
+            return [dirname for dirname, _ in dirs_with_mtime]
+
+        except OSError as e:
+            raise WorkspaceError(f"Failed to list directories in workspace: {e}")
+
+    def list_all(self) -> list[str]:
+        """
+        List all files and directories in the workspace, sorted by modification time.
+
+        Returns both files and directories, excluding hidden items.
+        Directories are suffixed with '/' for easy identification.
+        Sorted by modification time (newest first).
+
+        Returns:
+            List of file and directory names, with directories suffixed by '/'.
+
+        Raises:
+            RateLimitError: If rate limit is exceeded.
+            WorkspaceError: If workspace access fails.
+        """
+        self._check_rate_limit()
+
+        try:
+            items_with_mtime = []
+
+            for item in self._workspace.root.iterdir():
+                # Skip hidden items
+                if item.name.startswith("."):
+                    continue
+
+                try:
+                    mtime = item.stat().st_mtime
+                    if item.is_file():
+                        items_with_mtime.append((item.name, mtime))
+                    elif item.is_dir():
+                        # Add '/' suffix to indicate directory
+                        items_with_mtime.append((f"{item.name}/", mtime))
+                except (OSError, PermissionError):
+                    # Skip items we can't access
+                    continue
+
+            # Sort by modification time (newest first)
+            items_with_mtime.sort(key=lambda x: x[1], reverse=True)
+
+            return [item_name for item_name, _ in items_with_mtime]
+
+        except OSError as e:
+            raise WorkspaceError(f"Failed to list workspace contents: {e}")
+
     def __str__(self) -> str:
         """Return string representation of FileSystemTools."""
         return f"FileSystemTools(workspace={self._workspace}, limits=r:{self._max_read}/w:{self._max_write}/rate:{self._rate_limit})"

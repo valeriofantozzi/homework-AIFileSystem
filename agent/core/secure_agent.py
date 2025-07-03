@@ -73,6 +73,26 @@ class ToolResultFormatter:
             else:
                 return f"✅ Files{time_info}:\n{str(result)}"
         
+        elif tool_name == "list_directories":
+            if isinstance(result, list):
+                count = len(result)
+                dirs_str = "\n".join(f"  📁 {directory}" for directory in result[:10])  # Show first 10
+                if count > 10:
+                    dirs_str += f"\n  ... and {count - 10} more directories"
+                return f"✅ Found {count} directories{time_info}:\n{dirs_str}"
+            else:
+                return f"✅ Directories{time_info}:\n{str(result)}"
+        
+        elif tool_name == "list_all":
+            if isinstance(result, list):
+                count = len(result)
+                items_str = "\n".join(f"  {'📁' if item.endswith('/') else '📄'} {item}" for item in result[:10])  # Show first 10
+                if count > 10:
+                    items_str += f"\n  ... and {count - 10} more items"
+                return f"✅ Found {count} items{time_info}:\n{items_str}"
+            else:
+                return f"✅ Workspace contents{time_info}:\n{str(result)}"
+        
         elif tool_name == "read_file":
             content_len = len(str(result))
             lines = len(str(result).split('\n'))
@@ -333,6 +353,8 @@ You have access to the following tools:
 
 CORE FILE OPERATIONS:
 - list_files(): List all files in the workspace (sorted by modification time, newest first)
+- list_directories(): List all directories in the workspace (sorted by modification time, newest first)
+- list_all(): List both files and directories (directories marked with '/')
 - read_file(filename): Read content from a file
 - write_file(filename, content, mode): Write content to a file
 - delete_file(filename): Delete a file
@@ -713,6 +735,8 @@ Always explain your reasoning and what tools you're using."""
         return [
             # Core CRUD operations (Task 4.1)
             "list_files", 
+            "list_directories",  # Directory listing functionality
+            "list_all",         # Combined file and directory listing
             "read_file", 
             "write_file", 
             "delete_file", 
