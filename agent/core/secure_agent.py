@@ -66,30 +66,56 @@ class ToolResultFormatter:
         if tool_name == "list_files":
             if isinstance(result, list):
                 count = len(result)
-                files_str = "\n".join(f"  - {file}" for file in result[:10])  # Show first 10
-                if count > 10:
-                    files_str += f"\n  ... and {count - 10} more files"
-                return f"✅ Found {count} files{time_info}:\n{files_str}"
+                if count == 0:
+                    return f"✅ No files found{time_info}"
+                
+                # Always show complete list - no truncation for file listings
+                files_str = "\n".join(f"   📄 {file}" for file in result)
+                return f"✅ Complete file listing{time_info} ({count} files):\n{files_str}"
             else:
                 return f"✅ Files{time_info}:\n{str(result)}"
         
         elif tool_name == "list_directories":
             if isinstance(result, list):
                 count = len(result)
-                dirs_str = "\n".join(f"  📁 {directory}" for directory in result[:10])  # Show first 10
-                if count > 10:
-                    dirs_str += f"\n  ... and {count - 10} more directories"
-                return f"✅ Found {count} directories{time_info}:\n{dirs_str}"
+                if count == 0:
+                    return f"✅ No directories found{time_info}"
+                
+                # Always show complete list - no truncation for directory listings
+                dirs_str = "\n".join(f"   📁 {directory}" for directory in result)
+                return f"✅ Complete directory listing{time_info} ({count} directories):\n{dirs_str}"
             else:
                 return f"✅ Directories{time_info}:\n{str(result)}"
         
         elif tool_name == "list_all":
             if isinstance(result, list):
                 count = len(result)
-                items_str = "\n".join(f"  {'📁' if item.endswith('/') else '📄'} {item}" for item in result[:10])  # Show first 10
-                if count > 10:
-                    items_str += f"\n  ... and {count - 10} more items"
-                return f"✅ Found {count} items{time_info}:\n{items_str}"
+                # ALWAYS show ALL items - user explicitly wants complete list without truncation
+                if count == 0:
+                    return f"✅ Workspace is empty{time_info} (0 items)"
+                
+                # Create detailed listing with proper formatting
+                files = [item for item in result if not item.endswith('/')]
+                directories = [item for item in result if item.endswith('/')]
+                
+                items_display = []
+                
+                # Show directories first
+                if directories:
+                    items_display.append("📁 Directories:")
+                    for directory in directories:
+                        items_display.append(f"   📁 {directory}")
+                
+                # Then show files
+                if files:
+                    if directories:  # Add separator if both exist
+                        items_display.append("")
+                    items_display.append("📄 Files:")
+                    for file in files:
+                        items_display.append(f"   📄 {file}")
+                
+                items_str = "\n".join(items_display)
+                return f"✅ Complete workspace listing{time_info} ({count} items total):\n\n{items_str}"
             else:
                 return f"✅ Workspace contents{time_info}:\n{str(result)}"
         
@@ -103,6 +129,9 @@ class ToolResultFormatter:
         
         elif tool_name == "delete_file":
             return f"✅ File deleted{time_info}: {str(result)}"
+        
+        elif tool_name == "show_complete_workspace":
+            return f"✅ Complete workspace contents{time_info}:\n{str(result)}"
         
         elif tool_name in ["get_file_info", "find_files_by_pattern", "read_newest_file"]:
             return f"✅ {tool_name.replace('_', ' ').title()}{time_info}:\n{str(result)}"
@@ -355,6 +384,7 @@ CORE FILE OPERATIONS:
 - list_files(): List all files in the workspace (sorted by modification time, newest first)
 - list_directories(): List all directories in the workspace (sorted by modification time, newest first)
 - list_all(): List both files and directories (directories marked with '/')
+- show_complete_workspace(): Show COMPLETE workspace contents with NO truncation - guarantees ALL items are displayed
 - read_file(filename): Read content from a file
 - write_file(filename, content, mode): Write content to a file
 - delete_file(filename): Delete a file
@@ -364,6 +394,11 @@ ADVANCED OPERATIONS:
 - read_newest_file(): Read the most recently modified file
 - find_files_by_pattern(pattern): Find files matching a pattern (substring search)
 - get_file_info(filename): Get detailed metadata about a file
+
+IMPORTANT: When user asks for complete listing or "tutto" or wants to see ALL files/folders:
+- Use show_complete_workspace() to guarantee complete display
+- This tool NEVER truncates and shows every single item
+- Perfect for when user specifically wants to see everything
 
 IMPORTANT CONSTRAINTS:
 1. You can ONLY operate on files within your assigned workspace
