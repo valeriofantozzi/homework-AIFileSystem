@@ -548,47 +548,37 @@ Always explain your reasoning and what tools you're using."""
                 execution_time = time.time() - start_time
                 return ToolResultFormatter.format_error_result("read_newest_file", e, execution_time)
         
-        def find_files_by_pattern(pattern: str, use_regex: bool = False) -> str:
-            """Find files matching a pattern with optional regex support."""
+        # Attach metadata to the function
+        read_newest_file.tool_metadata = {
+            "description": "Read the content of the most recently modified file in the workspace",
+            "parameters": {},
+            "examples": [
+                "read the newest file",
+                "show me the most recent file content",
+                "what's in the latest file?"
+            ]
+        }
+
+        def find_files_by_pattern(pattern: str) -> str:
+            """Find files whose names match a specific pattern (supports wildcards)."""
             start_time = time.time()
             try:
-                # Get raw tools to avoid formatting conflicts
+                import fnmatch
+                
                 raw_tools = create_file_tools(self.workspace)
                 files = raw_tools["list_files"]()
                 
                 if not files:
                     return "No files found in workspace"
                 
-                # Handle both list and string formats
-                if isinstance(files, list):
-                    file_list = files
-                elif isinstance(files, str) and files.strip():
-                    file_list = files.strip().split('\n')
-                else:
-                    return "No files found in workspace"
-                
-                matching_files = []
-                
-                if use_regex:
-                    try:
-                        regex_pattern = re.compile(pattern, re.IGNORECASE)
-                        matching_files = [f for f in file_list if f and regex_pattern.search(f)]
-                    except re.error as regex_err:
-                        return ToolResultFormatter.format_validation_error(
-                            "find_files_by_pattern",
-                            f"Invalid regex pattern '{pattern}': {str(regex_err)}"
-                        )
-                else:
-                    # Simple substring match
-                    matching_files = [f for f in file_list if f and pattern.lower() in f.lower()]
+                file_list = files if isinstance(files, list) else files.strip().split('\n')
+                matching_files = [f for f in file_list if f and fnmatch.fnmatch(f, pattern)]
                 
                 execution_time = time.time() - start_time
                 
                 if matching_files:
                     result = f"Files matching pattern '{pattern}':\n" + '\n'.join(f"  - {f}" for f in matching_files)
-                    return ToolResultFormatter.format_success_result(
-                        "find_files_by_pattern", result, execution_time
-                    )
+                    return ToolResultFormatter.format_success_result("find_files_by_pattern", result, execution_time)
                 else:
                     return f"No files found matching pattern '{pattern}'"
                     
@@ -596,48 +586,72 @@ Always explain your reasoning and what tools you're using."""
                 execution_time = time.time() - start_time
                 return ToolResultFormatter.format_error_result("find_files_by_pattern", e, execution_time)
         
+        # Attach metadata to the function
+        find_files_by_pattern.tool_metadata = {
+            "description": "Find files whose names match a specific pattern using wildcards (* and ?)",
+            "parameters": {
+                "pattern": {
+                    "type": "string", 
+                    "description": "Pattern to match filenames (supports * and ? wildcards)",
+                    "required": True
+                }
+            },
+            "examples": [
+                "find files matching *.py",
+                "find all files like test_*",
+                "search for *.json files"
+            ]
+        }
+
         def get_file_info(filename: str) -> str:
             """Get comprehensive metadata information about a file."""
             start_time = time.time()
             try:
-                import os
-                file_path = os.path.join(self.workspace_path, filename)
+                from pathlib import Path
+                import datetime
                 
-                if not os.path.exists(file_path) or not os.path.isfile(file_path):
+                file_path = Path(self.workspace_path) / filename
+                
+                if not file_path.exists():
                     return f"File '{filename}' not found"
                 
-                # Get comprehensive file metadata
-                stat = os.stat(file_path)
+                # Get file statistics
+                stat = file_path.stat()
                 size = stat.st_size
-                modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+                created = datetime.datetime.fromtimestamp(stat.st_ctime).strftime('%Y-%m-%d %H:%M:%S')
+                modified = datetime.datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
                 
-                # Try to get content preview using raw tools
+                # Determine file type
+                if file_path.suffix:
+                    file_type = f"{file_path.suffix[1:].upper()} file"
+                else:
+                    file_type = "File (no extension)"
+                
+                # Read first few lines for preview (if text file)
+                preview = ""
                 try:
-                    raw_tools = create_file_tools(self.workspace)
-                    content = raw_tools["read_file"](filename)
-                    lines = len(content.split('\n'))
-                    words = len(content.split())
-                    preview = content[:300] + "..." if len(content) > 300 else content
-                except Exception:
-                    lines = "unknown"
-                    words = "unknown"
-                    preview = "Cannot read content"
-                
-                # Get file extension info
-                file_ext = Path(filename).suffix.lower()
-                file_type = {
-                    '.txt': 'Text file',
-                    '.md': 'Markdown file',
-                    '.py': 'Python script',
-                    '.json': 'JSON data',
-                    '.csv': 'CSV data',
-                    '.log': 'Log file'
-                }.get(file_ext, f'{file_ext} file' if file_ext else 'File without extension')
+                    if size < 10000:  # Only preview small files
+                        content = file_path.read_text(encoding='utf-8', errors='ignore')
+                        lines = content.split('\n')[:5]  # First 5 lines
+                        preview = '\n'.join(lines)
+                        if len(content.split('\n')) > 5:
+                            preview += "\n..."
+                        
+                        # Count lines and words
+                        lines = len(content.split('\n'))
+                        words = len(content.split())
+                    else:
+                        preview = "[File too large for preview]"
+                        lines = "Unknown"
+                        words = "Unknown"
+                except:
+                    preview = "[Binary file or encoding error]"
+                    lines = "Unknown"
+                    words = "Unknown"
                 
                 execution_time = time.time() - start_time
                 
-                result = (f"File: {filename}\n"
+                result = (f"File Information for '{filename}':\n"
                          f"Type: {file_type}\n"
                          f"Size: {size:,} bytes\n"
                          f"Created: {created}\n"
@@ -652,49 +666,70 @@ Always explain your reasoning and what tools you're using."""
                 execution_time = time.time() - start_time
                 return ToolResultFormatter.format_error_result("get_file_info", e, execution_time)
         
+        # Attach metadata to the function
+        get_file_info.tool_metadata = {
+            "description": "Get comprehensive metadata and information about a specific file (size, dates, type, preview)",
+            "parameters": {
+                "filename": {
+                    "type": "string",
+                    "description": "Name of the file to get information about",
+                    "required": True
+                }
+            },
+            "examples": [
+                "get info about config.py",
+                "show file details for data.json",
+                "tell me about README.md"
+            ]
+        }
+
         def find_largest_file() -> str:
-            """Find the largest file in the workspace."""
+            """Find and return information about the largest file in the workspace."""
             start_time = time.time()
             try:
-                # Get raw tools to avoid formatting conflicts
-                raw_tools = create_file_tools(self.workspace)
-                files = raw_tools["list_files"]()
+                from pathlib import Path
                 
-                if not files:
-                    return "No files found in workspace"
-                
-                file_list = files if isinstance(files, list) else files.strip().split('\n')
+                workspace_path = Path(self.workspace_path)
                 largest_file = None
                 largest_size = 0
                 
-                for filename in file_list:
-                    if filename:
+                for file_path in workspace_path.rglob('*'):
+                    if file_path.is_file():
                         try:
-                            file_path = os.path.join(self.workspace_path, filename)
-                            size = os.path.getsize(file_path)
+                            size = file_path.stat().st_size
                             if size > largest_size:
                                 largest_size = size
-                                largest_file = filename
-                        except Exception:
+                                largest_file = file_path.name
+                        except (OSError, PermissionError):
                             continue
                 
                 execution_time = time.time() - start_time
                 
                 if largest_file:
-                    result = f"Largest file: {largest_file} ({largest_size:,} bytes)"
+                    result = f"Largest file: '{largest_file}' ({largest_size:,} bytes)"
                     return ToolResultFormatter.format_success_result("find_largest_file", result, execution_time)
                 else:
-                    return "No accessible files found"
+                    return "No files found in workspace"
                     
             except Exception as e:
                 execution_time = time.time() - start_time
                 return ToolResultFormatter.format_error_result("find_largest_file", e, execution_time)
         
+        # Attach metadata to the function
+        find_largest_file.tool_metadata = {
+            "description": "Find the largest file in the workspace by file size",
+            "parameters": {},
+            "examples": [
+                "find the largest file",
+                "which file is biggest?",
+                "show me the largest file in the workspace"
+            ]
+        }
+
         def find_files_by_extension(extension: str) -> str:
-            """Find all files with a specific extension."""
+            """Find all files with a specific file extension."""
             start_time = time.time()
             try:
-                # Get raw tools to avoid formatting conflicts
                 raw_tools = create_file_tools(self.workspace)
                 files = raw_tools["list_files"]()
                 
@@ -720,6 +755,23 @@ Always explain your reasoning and what tools you're using."""
                 execution_time = time.time() - start_time
                 return ToolResultFormatter.format_error_result("find_files_by_extension", e, execution_time)
         
+        # Attach metadata to the function
+        find_files_by_extension.tool_metadata = {
+            "description": "Find all files with a specific file extension (e.g., .py, .txt, .json)",
+            "parameters": {
+                "extension": {
+                    "type": "string",
+                    "description": "File extension to search for (with or without leading dot)",
+                    "required": True
+                }
+            },
+            "examples": [
+                "find all .py files",
+                "list files with .json extension",
+                "show me all txt files"
+            ]
+        }
+
         # Add all advanced operations to tools
         self.file_tools["read_newest_file"] = read_newest_file
         self.file_tools["find_files_by_pattern"] = find_files_by_pattern
@@ -808,8 +860,13 @@ Always explain your reasoning and what tools you're using."""
                         
                         return formatted_error
                 
+                # Preserve tool metadata from the original function
+                if hasattr(func, 'tool_metadata'):
+                    enhanced_wrapper.tool_metadata = func.tool_metadata
+                
                 return enhanced_wrapper
             
             enhanced_tools[tool_name] = create_enhanced_wrapper(tool_name, tool_func)
         
         return enhanced_tools
+                         

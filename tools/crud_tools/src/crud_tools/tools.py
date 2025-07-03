@@ -18,6 +18,40 @@ from workspace_fs import (
     WorkspaceError,
 )
 
+# Tool metadata for self-describing tools
+TOOL_METADATA = {
+    "list_files": {
+        "description": "List all files in the current directory",
+        "parameters": {},
+        "examples": ["list all files", "show me the files", "what files are here"]
+    },
+    "list_directories": {
+        "description": "List only directories/folders in the current directory",
+        "parameters": {},
+        "examples": ["list directories", "show folders", "what directories exist"]
+    },
+    "list_all": {
+        "description": "List both files and directories in the current directory",
+        "parameters": {},
+        "examples": ["list everything", "show all files and folders", "tutti i file e cartelle"]
+    },
+    "read_file": {
+        "description": "Read the contents of a specific file",
+        "parameters": {"filename": "str"},
+        "examples": ["read config.json", "show me the content of readme.txt", "leggi il file"]
+    },
+    "write_file": {
+        "description": "Write content to a file",
+        "parameters": {"filename": "str", "content": "str", "mode": "str"},
+        "examples": ["create a new file", "write data to file.txt", "scrivi nel file"]
+    },
+    "delete_file": {
+        "description": "Delete a specific file",
+        "parameters": {"filename": "str"},
+        "examples": ["delete old_file.txt", "remove temporary.log", "elimina il file"]
+    }
+}
+
 try:
     # Check if pydantic_ai is available without importing
     import importlib.util
@@ -64,7 +98,10 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
         try:
             return fs_tools.list_files()
         except Exception as e:
-            raise WorkspaceError(f"Failed to list files: {e}") from e
+            raise RuntimeError(f"Failed to list files: {e}") from e
+    
+    # Attach metadata to the function
+    list_files.tool_metadata = TOOL_METADATA["list_files"]
 
     def list_directories() -> list[str]:
         """
@@ -84,6 +121,9 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
             return fs_tools.list_directories()
         except Exception as e:
             raise WorkspaceError(f"Failed to list directories: {e}") from e
+    
+    # Attach metadata to the function
+    list_directories.tool_metadata = TOOL_METADATA["list_directories"]
 
     def list_all() -> list[str]:
         """
@@ -103,6 +143,9 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
             return fs_tools.list_all()
         except Exception as e:
             raise WorkspaceError(f"Failed to list workspace contents: {e}") from e
+    
+    # Attach metadata to the function
+    list_all.tool_metadata = TOOL_METADATA["list_all"]
 
     def read_file(filename: str) -> str:
         """
@@ -130,6 +173,9 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
             raise
         except Exception as e:
             raise WorkspaceError(f"Failed to read file '{filename}': {e}") from e
+    
+    # Attach metadata to the function
+    read_file.tool_metadata = TOOL_METADATA["read_file"]
 
     def write_file(filename: str, content: str, mode: str = "w") -> str:
         """
@@ -158,6 +204,9 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
             raise
         except Exception as e:
             raise WorkspaceError(f"Failed to write file '{filename}': {e}") from e
+    
+    # Attach metadata to the function
+    write_file.tool_metadata = TOOL_METADATA["write_file"]
 
     def delete_file(filename: str) -> str:
         """
@@ -182,6 +231,9 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
             raise
         except Exception as e:
             raise WorkspaceError(f"Failed to delete file '{filename}': {e}") from e
+    
+    # Attach metadata to the function
+    delete_file.tool_metadata = TOOL_METADATA["delete_file"]
 
     # Return tool functions as dictionary
     return {

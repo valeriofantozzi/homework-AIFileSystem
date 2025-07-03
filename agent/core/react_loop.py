@@ -842,70 +842,20 @@ Think about whether I have enough information to answer the user's question or i
             return None  # Fall back to pattern matching
     
     def _build_tools_metadata(self) -> Dict[str, Dict[str, Any]]:
-        """Build metadata about available tools for the LLM selector."""
+        """Build metadata about available tools by extracting from tool metadata."""
         tools_metadata = {}
         
-        # Define tool descriptions - these would ideally come from tool definitions
-        tool_descriptions = {
-            "list_files": {
-                "description": "List all files in the current directory",
-                "parameters": {}
-            },
-            "list_directories": {
-                "description": "List only directories/folders in the current directory",
-                "parameters": {}
-            },
-            "list_all": {
-                "description": "List both files and directories in the current directory",
-                "parameters": {}
-            },
-            "read_file": {
-                "description": "Read the contents of a specific file",
-                "parameters": {"filename": "string"}
-            },
-            "write_file": {
-                "description": "Write content to a file",
-                "parameters": {"filename": "string", "content": "string"}
-            },
-            "delete_file": {
-                "description": "Delete a specific file",
-                "parameters": {"filename": "string"}
-            },
-            "get_file_info": {
-                "description": "Get detailed information about a file (size, dates, permissions)",
-                "parameters": {"filename": "string"}
-            },
-            "find_files_by_pattern": {
-                "description": "Find files matching a specific pattern or containing text",
-                "parameters": {"pattern": "string"}
-            },
-            "read_newest_file": {
-                "description": "Read the contents of the most recently modified file",
-                "parameters": {}
-            },
-            "find_largest_file": {
-                "description": "Find the largest file in the directory",
-                "parameters": {}
-            },
-            "answer_question_about_files": {
-                "description": "Answer questions about files using AI analysis",
-                "parameters": {"query": "string"}
-            },
-            "help": {
-                "description": "Get help and list available commands",
-                "parameters": {}
-            }
-        }
-        
-        # Only include tools that are actually available
-        for tool_name in self.tools.keys():
-            if tool_name in tool_descriptions:
-                tools_metadata[tool_name] = tool_descriptions[tool_name]
+        # Extract metadata from tools that have it attached
+        for tool_name, tool_func in self.tools.items():
+            if hasattr(tool_func, 'tool_metadata'):
+                # Use the metadata that's attached to the tool function
+                tools_metadata[tool_name] = tool_func.tool_metadata
             else:
-                # Fallback for unknown tools
+                # Fallback for tools without metadata (should be rare)
                 tools_metadata[tool_name] = {
                     "description": f"Tool: {tool_name}",
-                    "parameters": {}
+                    "parameters": {},
+                    "examples": []
                 }
         
         return tools_metadata
@@ -1311,26 +1261,26 @@ Think about whether I have enough information to answer the user's question or i
                     step_summaries.append(f"ACTION: Used {step.tool_name} → {step.tool_result}")
             previous_steps = "\n".join(step_summaries)
         
-        # Build tool descriptions
-        tool_descriptions = {
-            "list_files": "List all files in the workspace",
-            "list_directories": "List all directories in the workspace", 
-            "list_all": "List both files and directories in the workspace",
-            "read_file": "Read content of a specific file (args: filename)",
-            "write_file": "Write content to a file (args: filename, content)",
-            "delete_file": "Delete a specific file (args: filename)",
-            "answer_question_about_files": "Answer questions about file content (args: question)",
-            "read_newest_file": "Read the most recently modified file",
-            "find_files_by_pattern": "Find files matching a pattern (args: pattern)",
-            "get_file_info": "Get metadata about a file (args: filename)",
-            "find_largest_file": "Find the largest file in the workspace",
-            "find_files_by_extension": "Find files with specific extension (args: extension)"
-        }
+        # Build tool descriptions from tool metadata
+        tools_metadata = self._build_tools_metadata()
         
         available_tool_info = []
         for tool_name in available_tools:
-            description = tool_descriptions.get(tool_name, f"Tool: {tool_name}")
-            available_tool_info.append(f"- {tool_name}: {description}")
+            if tool_name in tools_metadata:
+                tool_meta = tools_metadata[tool_name]
+                description = tool_meta.get('description', f"Tool: {tool_name}")
+                parameters = tool_meta.get('parameters', {})
+                
+                # Format parameters info if available
+                if parameters:
+                    param_info = f" (args: {', '.join(parameters.keys())})"
+                else:
+                    param_info = ""
+                
+                available_tool_info.append(f"- {tool_name}: {description}{param_info}")
+            else:
+                # Fallback for tools without metadata
+                available_tool_info.append(f"- {tool_name}: Tool: {tool_name}")
         
         # Get context summary from tool chain
         context_summary = tool_chain_context.get_context_summary()
