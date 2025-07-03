@@ -99,6 +99,38 @@ class ReActResult:
     tool_chain_context: Optional[ToolChainContext] = None
 
 
+@dataclass
+class ConsolidatedReActResponse:
+    """Structured response from a single LLM call containing all ReAct phases."""
+    thinking: str
+    tool_name: Optional[str] = None
+    tool_args: Optional[Dict[str, Any]] = None
+    continue_reasoning: bool = True
+    final_response: Optional[str] = None
+    confidence: float = 0.8
+    
+    @classmethod
+    def from_json_string(cls, json_str: str) -> 'ConsolidatedReActResponse':
+        """Parse JSON response from LLM into structured format."""
+        try:
+            data = json.loads(json_str)
+            return cls(
+                thinking=data.get("thinking", "No thinking provided"),
+                tool_name=data.get("tool_name"),
+                tool_args=data.get("tool_args", {}),
+                continue_reasoning=data.get("continue_reasoning", True),
+                final_response=data.get("final_response"),
+                confidence=data.get("confidence", 0.8)
+            )
+        except (json.JSONDecodeError, KeyError) as e:
+            # Fallback to text parsing if JSON fails
+            return cls(
+                thinking=f"Failed to parse structured response: {json_str}",
+                continue_reasoning=False,
+                final_response=json_str
+            )
+
+
 class ReActLoop:
     """
     Implementation of the ReAct (Reasoning-Action-Observation) pattern.
@@ -236,6 +268,9 @@ Translation:"""
         """
         Execute the ReAct reasoning loop for a given query.
         
+        Uses consolidated single-call approach for efficiency when llm_response_func is available,
+        otherwise falls back to traditional multi-call approach.
+        
         Args:
             query: User query to process
             context: Conversation context
@@ -243,8 +278,21 @@ Translation:"""
         Returns:
             ReActResult with final response and reasoning trace
         """
+        # Use consolidated approach if LLM response function is available
+        if self.llm_response_func:
+            return await self.execute_consolidated_iteration(query, context)
+        
+        # Fallback to traditional approach
+        return await self.execute_traditional(query, context)
+
+    async def execute_traditional(self, query: str, context: Any) -> ReActResult:
+        """
+        Execute the traditional multi-call ReAct reasoning loop (legacy method).
+        
+        This method is kept for compatibility when llm_response_func is not available.
+        """
         self.logger.info(
-            "Starting ReAct reasoning loop",
+            "Starting traditional ReAct reasoning loop",
             conversation_id=getattr(context, 'conversation_id', 'unknown'),
             query=query
         )
@@ -260,7 +308,6 @@ Translation:"""
             context.original_user_query = context.user_query  # Store original
             context.user_query = translated_query  # Use translated for tool selection
         else:
-            # If context doesn't have user_query, add it
             setattr(context, 'user_query', translated_query)
             setattr(context, 'original_user_query', query)
         
@@ -1011,3 +1058,335 @@ Think about whether I have enough information to answer the user's question or i
             return thought.strip()
         
         return None
+
+    async def execute_consolidated_iteration(self, query: str, context: Any) -> ReActResult:
+        """
+        Execute ReAct reasoning loop with consolidated single-call approach for cost efficiency.
+        
+        This method makes a single LLM call per iteration that includes all phases:
+        THINK → DECIDE → ACT → CONTINUE evaluation in one structured response.
+        
+        Args:
+            query: User query to process
+            context: Conversation context
+            
+        Returns:
+            ReActResult with final response and reasoning trace
+        """
+        self.logger.info(
+            "Starting consolidated ReAct reasoning loop",
+            conversation_id=getattr(context, 'conversation_id', 'unknown'),
+            query=query
+        )
+        
+        # Initialize reasoning state
+        self._reset_state()
+        
+        # FIRST STEP: Translate query to English for better tool selection and reasoning
+        translated_query, original_query = await self._translate_to_english(query)
+        
+        # Update context with translated query for tool selection
+        if hasattr(context, 'user_query'):
+            context.original_user_query = context.user_query  # Store original
+            context.user_query = translated_query  # Use translated for tool selection
+        else:
+            setattr(context, 'user_query', translated_query)
+            setattr(context, 'original_user_query', query)
+        
+        # Add translation step to reasoning trace if translation occurred
+        if translated_query != original_query:
+            translation_step = ReActStep(
+                phase=ReActPhase.THINK,
+                step_number=len(self.scratchpad) + 1,
+                content=f"TRANSLATION: Original query '{original_query}' translated to English: '{translated_query}'"
+            )
+            self.scratchpad.append(translation_step)
+        
+        # Initialize tool chain context for better multi-step operations
+        tool_chain_context = ToolChainContext()
+        
+        try:
+            while (self.iteration_count < self.max_iterations):
+                self.iteration_count += 1
+                
+                # Build consolidated prompt for this iteration
+                consolidated_prompt = self._build_consolidated_prompt(
+                    query=translated_query,
+                    context=context,
+                    reasoning_history=self.scratchpad,
+                    available_tools=list(self.tools.keys()),
+                    tool_chain_context=tool_chain_context
+                )
+                
+                # Make single LLM call for all reasoning phases
+                try:
+                    response_text = await self.llm_response_func(consolidated_prompt)
+                    parsed_response = ConsolidatedReActResponse.from_json_string(response_text)
+                except Exception as e:
+                    self.logger.warning(f"Failed to get LLM response or parse: {e}")
+                    # Fallback to text-based processing with a safe default
+                    error_text = f"Error in LLM call: {str(e)}"
+                    parsed_response = ConsolidatedReActResponse(
+                        thinking=error_text,
+                        continue_reasoning=False,
+                        final_response=error_text
+                    )
+                
+                # Record the thinking step
+                thinking_step = ReActStep(
+                    phase=ReActPhase.THINK,
+                    step_number=len(self.scratchpad) + 1,
+                    content=parsed_response.thinking
+                )
+                self.scratchpad.append(thinking_step)
+                
+                if self.debug_mode:
+                    self.logger.debug("THINK phase", content=parsed_response.thinking)
+                
+                # Execute tool if one was selected
+                tool_result = None
+                if parsed_response.tool_name:
+                    tool_result = await self._execute_selected_tool(
+                        parsed_response.tool_name,
+                        parsed_response.tool_args or {},
+                        tool_chain_context
+                    )
+                    
+                    # Record the action step
+                    action_step = ReActStep(
+                        phase=ReActPhase.ACT,
+                        step_number=len(self.scratchpad) + 1,
+                        content=f"Calling {parsed_response.tool_name} with args: {parsed_response.tool_args}",
+                        tool_name=parsed_response.tool_name,
+                        tool_args=parsed_response.tool_args,
+                        tool_result=tool_result
+                    )
+                    self.scratchpad.append(action_step)
+                    
+                    # Add tool output to context for future iterations
+                    tool_chain_context.add_tool_output(parsed_response.tool_name, tool_result)
+                    
+                    if self.debug_mode:
+                        self.logger.debug("ACT phase", 
+                                        tool=parsed_response.tool_name, 
+                                        args=parsed_response.tool_args, 
+                                        result=tool_result)
+                
+                # Check if we should continue reasoning
+                if not parsed_response.continue_reasoning or parsed_response.final_response:
+                    # We have a final response, complete the loop
+                    final_response = parsed_response.final_response or self._generate_response_from_context(
+                        translated_query, tool_chain_context
+                    )
+                    break
+                
+                # If we executed a tool but no final response, continue iterating
+                if tool_result is None and not parsed_response.continue_reasoning:
+                    # No tool was executed and no continuation requested, complete
+                    final_response = parsed_response.thinking
+                    break
+            
+            # If we exceeded max iterations, generate response from context
+            if self.iteration_count >= self.max_iterations:
+                final_response = self._generate_response_from_context(translated_query, tool_chain_context)
+                self.logger.warning("Max iterations reached, generating response from context")
+            
+            result = ReActResult(
+                response=final_response,
+                tools_used=self._get_tools_used(),
+                reasoning_steps=self._format_reasoning_steps(),
+                success=True,
+                iterations=self.iteration_count,
+                tool_chain_context=tool_chain_context
+            )
+            
+            self.logger.info(
+                "Consolidated ReAct loop completed successfully",
+                conversation_id=getattr(context, 'conversation_id', 'unknown'),
+                iterations=self.iteration_count,
+                tools_used=result.tools_used,
+                original_query=original_query,
+                translated_query=translated_query
+            )
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(
+                "Consolidated ReAct loop failed",
+                conversation_id=getattr(context, 'conversation_id', 'unknown'),
+                error=str(e),
+                iterations=self.iteration_count
+            )
+            
+            return ReActResult(
+                response=f"I encountered an error during reasoning: {str(e)}",
+                success=False,
+                iterations=self.iteration_count
+            )
+
+    def _build_consolidated_prompt(
+        self, 
+        query: str, 
+        context: Any, 
+        reasoning_history: List[ReActStep], 
+        available_tools: List[str],
+        tool_chain_context: ToolChainContext
+    ) -> str:
+        """
+        Build a comprehensive prompt that includes all ReAct phases in a single call.
+        
+        This prompt guides the LLM through thinking, tool selection, and continuation
+        decisions in one structured response.
+        """
+        # Build context from previous reasoning steps
+        previous_steps = ""
+        if reasoning_history:
+            step_summaries = []
+            for step in reasoning_history[-5:]:  # Last 5 steps for context
+                if step.phase == ReActPhase.THINK:
+                    step_summaries.append(f"THOUGHT: {step.content}")
+                elif step.phase == ReActPhase.ACT:
+                    step_summaries.append(f"ACTION: Used {step.tool_name} → {step.tool_result}")
+            previous_steps = "\n".join(step_summaries)
+        
+        # Build tool descriptions
+        tool_descriptions = {
+            "list_files": "List all files in the workspace",
+            "list_directories": "List all directories in the workspace", 
+            "list_all": "List both files and directories in the workspace",
+            "read_file": "Read content of a specific file (args: filename)",
+            "write_file": "Write content to a file (args: filename, content)",
+            "delete_file": "Delete a specific file (args: filename)",
+            "answer_question_about_files": "Answer questions about file content (args: question)",
+            "read_newest_file": "Read the most recently modified file",
+            "find_files_by_pattern": "Find files matching a pattern (args: pattern)",
+            "get_file_info": "Get metadata about a file (args: filename)",
+            "find_largest_file": "Find the largest file in the workspace",
+            "find_files_by_extension": "Find files with specific extension (args: extension)"
+        }
+        
+        available_tool_info = []
+        for tool_name in available_tools:
+            description = tool_descriptions.get(tool_name, f"Tool: {tool_name}")
+            available_tool_info.append(f"- {tool_name}: {description}")
+        
+        # Get context summary from tool chain
+        context_summary = tool_chain_context.get_context_summary()
+        
+        return f"""You are a file system assistant using ReAct reasoning. Analyze the user's query and decide your next action.
+
+USER QUERY: {query}
+WORKSPACE: {getattr(context, 'workspace_path', 'Unknown')}
+
+PREVIOUS REASONING STEPS:
+{previous_steps or "None - this is the first iteration"}
+
+CONTEXT FROM TOOLS:
+{context_summary}
+
+AVAILABLE TOOLS:
+{chr(10).join(available_tool_info)}
+
+INSTRUCTIONS:
+1. THINK through the problem step by step
+2. DECIDE if you need to use a tool or can provide a final answer
+3. If using a tool, specify the exact tool name and arguments
+4. Determine if more reasoning will be needed after this action
+
+Respond with a JSON object in this exact format:
+{{
+  "thinking": "Your step-by-step reasoning about what to do next",
+  "tool_name": "exact_tool_name_or_null",
+  "tool_args": {{"param": "value"}},
+  "continue_reasoning": true/false,
+  "final_response": "Complete answer if reasoning is done, otherwise null",
+  "confidence": 0.8
+}}
+
+IMPORTANT:
+- Use "null" for tool_name if no tool is needed
+- Set continue_reasoning to false only when you have a complete answer
+- If you use a tool, set continue_reasoning to true unless you're certain this will be the final step
+- The final_response should only be provided when continue_reasoning is false"""
+
+    async def _execute_selected_tool(
+        self, 
+        tool_name: str, 
+        tool_args: Dict[str, Any], 
+        tool_chain_context: ToolChainContext
+    ) -> str:
+        """
+        Execute a tool selected by the consolidated reasoning process.
+        
+        Handles tool execution with enhanced error handling and context management.
+        """
+        if tool_name not in self.tools:
+            error_msg = f"Tool '{tool_name}' not available"
+            self.logger.warning("Invalid tool requested", tool=tool_name)
+            return error_msg
+        
+        try:
+            # Handle special cases for tool arguments
+            if tool_name == "read_file" and tool_args.get("filename") == "LATEST_FILE":
+                # Resolve latest file from context or by listing files
+                if tool_chain_context.discovered_files:
+                    latest_file = tool_chain_context.discovered_files[-1]
+                    tool_args["filename"] = latest_file
+                    self.logger.info("Resolved LATEST_FILE from context", filename=latest_file)
+                else:
+                    # Get file list to find latest
+                    list_result = self.tools["list_files"]()
+                    if isinstance(list_result, list) and list_result:
+                        latest_file = list_result[0]
+                        tool_args["filename"] = latest_file
+                        tool_chain_context.discovered_files.extend(list_result)
+                    elif isinstance(list_result, str) and list_result.strip():
+                        files = list_result.strip().split('\n')
+                        if files and files[0]:
+                            latest_file = files[0]
+                            tool_args["filename"] = latest_file
+                            tool_chain_context.discovered_files.extend(files)
+                        else:
+                            return "No files found in workspace"
+                    else:
+                        return "Could not list files to find latest"
+            
+            # Execute the tool
+            tool_func = self.tools[tool_name]
+            
+            # Log tool usage for diagnostics
+            log_tool_usage(tool_name, tool_args)
+            
+            # Handle both sync and async tools
+            import asyncio
+            import inspect
+            
+            if tool_args:
+                if inspect.iscoroutinefunction(tool_func):
+                    result = await tool_func(**tool_args)
+                else:
+                    result = tool_func(**tool_args)
+            else:
+                if inspect.iscoroutinefunction(tool_func):
+                    result = await tool_func()
+                else:
+                    result = tool_func()
+            
+            # Update tool chain context based on tool type
+            if tool_name in ["list_files", "list_all"]:
+                if isinstance(result, list):
+                    tool_chain_context.discovered_files.extend(result)
+                elif isinstance(result, str):
+                    files = [f.strip() for f in result.split('\n') if f.strip()]
+                    tool_chain_context.discovered_files.extend(files)
+            elif tool_name == "read_file" and "filename" in tool_args:
+                # Cache file content for future reference
+                tool_chain_context.cache_file_content(tool_args["filename"], str(result))
+            
+            return str(result)
+            
+        except Exception as e:
+            error_msg = f"Tool execution failed: {str(e)}"
+            self.logger.error("Tool execution failed", tool=tool_name, error=str(e))
+            return error_msg

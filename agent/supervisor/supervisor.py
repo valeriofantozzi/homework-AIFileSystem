@@ -165,18 +165,24 @@ class RequestSupervisor:
             ]
         }
         
-        # File operation allowlist patterns
+        # File operation allowlist patterns - Enhanced with Italian support
         self.allowed_operations = {
-            'read': [r'read.*file', r'show.*content', r'display.*file'],
-            'write': [r'write.*file', r'create.*file', r'save.*to'],
-            'modify': [r'modify.*file', r'update.*file', r'edit.*file', r'change.*file'], 
+            'read': [r'read.*file', r'show.*content', r'display.*file', r'view.*file', r'describe.*file',
+                    r'describe.*\.', r'leggi.*file', r'mostra.*contenuto', r'visualizza.*file', r'descrivi.*file',
+                    r'descrivi.*\.', r'apri.*file', r'contenuto.*di', r'vedi.*file'],
+            'write': [r'write.*file', r'create.*file', r'save.*to', r'scrivi.*file', 
+                     r'crea.*file', r'salva.*in', r'aggiungi.*a'],
+            'modify': [r'modify.*file', r'update.*file', r'edit.*file', r'change.*file',
+                      r'modifica.*file', r'aggiorna.*file', r'cambia.*file', r'edita.*file'], 
             'list': [r'list.*files', r'show.*files', r'list.*directories', r'show.*directories',
                     r'list.*folders', r'show.*folders', r'directory', r'directories', r'folders',
                     r'lista.*file', r'mostra.*file', r'lista.*directory', r'mostra.*cartelle',
                     r'cartelle', r'.*directory.*list', r'.*folder.*list', r'folder.*structure',
-                    r'list.*all', r'show.*all'],
-            'delete': [r'delete.*file', r'remove.*file'],
-            'question': [r'what.*in', r'analyze.*files', r'find.*in'],
+                    r'list.*all', r'show.*all', r'elenca.*file', r'fai.*lista'],
+            'delete': [r'delete.*file', r'remove.*file', r'elimina.*file', r'rimuovi.*file',
+                      r'cancella.*file'],
+            'question': [r'what.*in', r'analyze.*files', r'find.*in', r'cosa.*in', 
+                        r'trova.*in', r'cerca.*in'],
             'project_analysis': [r'analizza.*progetto', r'analyze.*project', r'project.*analysis', 
                                r'overview.*project', r'describe.*project', r'summarize.*project',
                                r'project.*structure', r'code.*review', r'project.*summary',
@@ -186,6 +192,7 @@ class RequestSupervisor:
     def filter_content(self, query: str) -> ContentFilterResult:
         """
         Apply content filtering to detect safety risks and suggest alternatives.
+        Enhanced with positive pattern matching for allowed operations.
         
         Args:
             query: User query to filter
@@ -201,39 +208,69 @@ class RequestSupervisor:
         
         query_lower = query.lower()
         
-        # Check for each safety risk type
-        for risk_type, patterns in self.safety_patterns.items():
+        # First, check for positive matches against allowed operations
+        # This should take precedence over risk detection for legitimate operations
+        is_allowed_operation = False
+        for operation_type, patterns in self.allowed_operations.items():
             for pattern in patterns:
                 if re.search(pattern, query_lower, re.IGNORECASE):
-                    detected_risks.append(risk_type)
-                    explanation_parts.append(f"Detected {risk_type.value} pattern")
+                    is_allowed_operation = True
+                    explanation_parts.append(f"Matches allowed {operation_type} operation pattern")
                     break
+            if is_allowed_operation:
+                break
         
-        # Check if query is off-topic (not related to file operations)
+        # Check for safety risks only if not already identified as allowed operation
+        if not is_allowed_operation:
+            for risk_type, patterns in self.safety_patterns.items():
+                for pattern in patterns:
+                    if re.search(pattern, query_lower, re.IGNORECASE):
+                        detected_risks.append(risk_type)
+                        explanation_parts.append(f"Detected {risk_type.value} pattern")
+                        break
+        
+        # Enhanced file-related keyword check with Italian support
         file_related_keywords = [
             'file', 'read', 'write', 'delete', 'list', 'directory', 'folder',
             'create', 'save', 'content', 'document', 'text', 'data',
             'modify', 'update', 'edit', 'change', 'append', 'add',
             'project', 'analyze', 'analizza', 'overview', 'structure', 'summary',
             'progetto', 'panoramica', 'struttura', 'codice', 'review',
-            'directories', 'folders', 'cartelle', 'lista', 'mostra'
+            'directories', 'folders', 'cartelle', 'lista', 'mostra',
+            # Italian file operation terms
+            'leggi', 'scrivi', 'crea', 'salva', 'elimina', 'rimuovi', 'cancella',
+            'modifica', 'aggiorna', 'cambia', 'edita', 'descrivi', 'apri',
+            'contenuto', 'vedi', 'visualizza', 'aggiungi', 'elenca', 'fai'
         ]
         
-        if not any(keyword in query_lower for keyword in file_related_keywords):
+        # Check if query contains file-related keywords or matches allowed operations
+        has_file_keywords = any(keyword in query_lower for keyword in file_related_keywords)
+        
+        # Only mark as off-topic if it's neither an allowed operation nor contains file keywords
+        if not is_allowed_operation and not has_file_keywords:
             # Check if it's a reasonable general question about files
-            question_keywords = ['what', 'how', 'where', 'when', 'why', 'which']
+            question_keywords = ['what', 'how', 'where', 'when', 'why', 'which', 'cosa', 'come']
             if not any(keyword in query_lower for keyword in question_keywords):
                 detected_risks.append(SafetyRisk.OFF_TOPIC)
                 explanation_parts.append("Query appears unrelated to file operations")
                 suggested_alternatives.extend([
                     "Ask about reading, writing, or analyzing files",
-                    "Request file listings or operations",
-                    "Ask questions about file contents"
+                    "Request file listings or operations", 
+                    "Ask questions about file contents",
+                    "Usa comandi come 'descrivi', 'leggi', 'mostra' per operazioni sui file"
                 ])
         
         # Determine if content is safe
-        is_safe = len(detected_risks) == 0
-        confidence = 0.9 if is_safe else max(0.1, 1.0 - len(detected_risks) * 0.3)
+        # If it's an allowed operation, prioritize that over detected risks
+        if is_allowed_operation:
+            is_safe = True
+            confidence = 0.95
+            detected_risks = []  # Clear any false positive risks for allowed operations
+            if not explanation_parts:
+                explanation_parts = ["Query matches allowed file operation patterns"]
+        else:
+            is_safe = len(detected_risks) == 0
+            confidence = 0.9 if is_safe else max(0.1, 1.0 - len(detected_risks) * 0.3)
         
         # Generate explanation
         if explanation_parts:
@@ -318,6 +355,66 @@ class RequestSupervisor:
             risk_factors=[risk.value for risk in filter_result.detected_risks]
         )
 
+    async def _translate_query_for_moderation(self, query: str) -> tuple[str, str]:
+        """
+        Translate query to English for improved moderation if needed.
+        
+        This ensures that the supervisor can properly understand and moderate
+        queries in any language by translating them to English first.
+        """
+        # Check if query appears to be in English already
+        english_indicators = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']
+        words = query.lower().split()
+        english_word_count = sum(1 for word in words if any(indicator in word for indicator in english_indicators))
+        
+        # If more than 30% of words contain English indicators, assume it's English
+        if len(words) > 0 and (english_word_count / len(words)) > 0.3:
+            return query, query
+        
+        # For non-English queries, use simple LLM-based translation
+        # Create a separate translation agent to avoid JSON moderation responses
+        try:
+            if self.model_provider:
+                # Create a dedicated translation agent with simple system prompt
+                provider_map = {
+                    'openai': 'openai',
+                    'anthropic': 'anthropic',
+                    'gemini': 'gemini',
+                    'groq': 'groq'
+                }
+                
+                provider_name = provider_map.get(self.model_provider.provider_name, 'openai')
+                model_name = self.model_provider.model_name
+                
+                translation_agent = Agent(
+                    f"{provider_name}:{model_name}",
+                    system_prompt="You are a translation assistant. Your only task is to translate text to English. If the text is already in English, return it unchanged. Always return only the translated text with no additional formatting, explanations, or JSON.",
+                    result_type=str
+                )
+                
+                translation_prompt = f"Translate this to English: {query}"
+                
+                result = await translation_agent.run(translation_prompt)
+                translated = self._extract_agent_result(result)
+                # Clean up the response - remove quotes, extra whitespace
+                translated = translated.strip().strip('"').strip("'").strip()
+                
+                self.logger.info(
+                    "Query translated for moderation",
+                    original=query,
+                    translated=translated,
+                    was_translated=(translated != query)
+                )
+                
+                return translated, query
+            else:
+                # No model provider available, use original query
+                return query, query
+                
+        except Exception as e:
+            self.logger.warning(f"Translation failed during moderation, using original query: {e}")
+            return query, query
+
     async def moderate_request(self, request: ModerationRequest) -> ModerationResponse:
         """
         Supervise a user request for safety compliance and intent extraction.
@@ -337,8 +434,11 @@ class RequestSupervisor:
                         query_length=len(request.user_query))
         
         try:
+            # Translate query to English if needed
+            translated_query, original_query = await self._translate_query_for_moderation(request.user_query)
+            
             # Phase 1: Fast content filtering for immediate safety assessment
-            filter_result = self.filter_content(request.user_query)
+            filter_result = self.filter_content(translated_query)
             
             # If content is clearly unsafe, reject immediately without AI processing
             if not filter_result.is_safe and filter_result.confidence > 0.8:
@@ -354,8 +454,8 @@ class RequestSupervisor:
                 self.logger.warning("Agent unavailable, using enhanced fallback moderation")
                 return self._enhanced_fallback_moderation(request, filter_result)
             
-            # Create user prompt with content filter context
-            user_prompt = f"User query: {request.user_query}"
+            # Create user prompt with content filter context using translated query
+            user_prompt = f"User query: {translated_query}"
             if not filter_result.is_safe:
                 user_prompt += f"\nContent filter detected potential risks: {[r.value for r in filter_result.detected_risks]}"
             
@@ -430,7 +530,8 @@ class RequestSupervisor:
     def _enhanced_fallback_moderation(
         self, 
         request: ModerationRequest, 
-        filter_result: ContentFilterResult
+        filter_result: ContentFilterResult,
+        translated_query: Optional[str] = None
     ) -> ModerationResponse:
         """Enhanced fallback moderation using content filter results."""
         
@@ -438,12 +539,12 @@ class RequestSupervisor:
         if not filter_result.is_safe:
             return self._create_enhanced_rejection_response(request, filter_result)
         
-        # Otherwise use rule-based moderation with enhancement
-        user_query = request.user_query.lower()
+        # Use translated query if available, otherwise original query
+        query_to_analyze = (translated_query or request.user_query).lower()
         
-        # Enhanced pattern matching for intent extraction
+        # Enhanced pattern matching for intent extraction with Italian support
         intent = None
-        if any(word in user_query for word in ['analizza', 'analyze', 'project', 'progetto', 'overview', 'structure', 'struttura']):
+        if any(word in query_to_analyze for word in ['analizza', 'analyze', 'project', 'progetto', 'overview', 'structure', 'struttura']):
             intent = IntentData(
                 intent_type=IntentType.PROJECT_ANALYSIS,
                 confidence=0.9,
@@ -454,35 +555,35 @@ class RequestSupervisor:
                 },
                 tools_needed=["list_files", "answer_question_about_files"]
             )
-        elif any(word in user_query for word in ['read', 'show', 'display', 'content', 'view']):
+        elif any(word in query_to_analyze for word in ['read', 'show', 'display', 'content', 'view', 'leggi', 'mostra', 'visualizza', 'descrivi', 'apri', 'contenuto', 'vedi']):
             intent = IntentData(
                 intent_type=IntentType.FILE_READ,
                 confidence=0.8,
                 parameters={},
                 tools_needed=["read_file"]
             )
-        elif any(word in user_query for word in ['write', 'create', 'save', 'add']):
+        elif any(word in query_to_analyze for word in ['write', 'create', 'save', 'add', 'scrivi', 'crea', 'salva', 'aggiungi']):
             intent = IntentData(
                 intent_type=IntentType.FILE_WRITE,
                 confidence=0.8,
                 parameters={},
                 tools_needed=["write_file"]
             )
-        elif any(word in user_query for word in ['delete', 'remove', 'erase']):
+        elif any(word in query_to_analyze for word in ['delete', 'remove', 'erase', 'elimina', 'rimuovi', 'cancella']):
             intent = IntentData(
                 intent_type=IntentType.FILE_DELETE,
                 confidence=0.8,
                 parameters={},
                 tools_needed=["delete_file"]
             )
-        elif any(word in user_query for word in ['list', 'files', 'directory', 'folder']):
+        elif any(word in query_to_analyze for word in ['list', 'files', 'directory', 'folder', 'lista', 'cartelle', 'elenca', 'fai']):
             intent = IntentData(
                 intent_type=IntentType.FILE_LIST,
                 confidence=0.8,
                 parameters={},
                 tools_needed=["list_files"]
             )
-        elif any(word in user_query for word in ['what', 'how', 'analyze', 'find', 'search']):
+        elif any(word in query_to_analyze for word in ['what', 'how', 'analyze', 'find', 'search', 'cosa', 'come', 'trova', 'cerca']):
             intent = IntentData(
                 intent_type=IntentType.FILE_QUESTION,
                 confidence=0.7,

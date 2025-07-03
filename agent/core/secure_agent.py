@@ -331,18 +331,12 @@ class SecureAgent:
             system_prompt=self._get_system_prompt()
         )
     
-    def _get_llm_response(self, prompt: str) -> str:
+    async def _get_llm_response(self, prompt: str) -> str:
         """Get a response from the LLM without tool calling."""
         try:
             # Use the agent for text generation
-            import asyncio
-            
-            async def get_response():
-                result = await self.agent.run(prompt)
-                return result.data
-            
-            # Run the async function
-            return asyncio.run(get_response())
+            result = await self.agent.run(prompt)
+            return result.data
             
         except Exception as e:
             self.logger.error("LLM response failed", error=str(e))
