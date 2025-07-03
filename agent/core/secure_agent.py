@@ -135,9 +135,9 @@ class ToolResultFormatter:
             if isinstance(result, str):
                 lines = result.split('\n')
                 line_count = len(lines)
-                return f"✅ WORKSPACE TREE STRUCTURE{time_info}\n📊 Total: {line_count} lines in tree view\n\n{result}"
+                return f"✅ WORKSPACE TREE STRUCTURE{time_info}\n📊 Total: {line_count} lines in tree view\n\n```\n{result}\n```"
             else:
-                return f"✅ Tree view{time_info}:\n{str(result)}"
+                return f"✅ Tree view{time_info}:\n```\n{str(result)}\n```"
         
         elif tool_name == "show_complete_workspace":
             # Return the result as-is since it's already formatted
