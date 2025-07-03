@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from config.model_config import ModelProvider
 # Import diagnostics for tool usage tracking
 from agent.diagnostics import log_tool_usage
+# Import the LLM tool selector for intelligent tool selection
+from agent.core.llm_tool_selector import LLMToolSelector, ToolSelectionResult
 
 
 class ReActPhase(Enum):
@@ -118,7 +120,9 @@ class ReActLoop:
         logger: Optional[structlog.BoundLogger] = None,
         max_iterations: int = 10,
         debug_mode: bool = False,
-        llm_response_func: Optional[callable] = None
+        llm_response_func: Optional[callable] = None,
+        mcp_thinking_tool: Optional[callable] = None,
+        use_llm_tool_selector: bool = True
     ) -> None:
         """
         Initialize the ReAct loop.
@@ -130,6 +134,8 @@ class ReActLoop:
             max_iterations: Maximum reasoning iterations to prevent infinite loops
             debug_mode: Enable detailed step tracking
             llm_response_func: Function to get LLM responses for reasoning
+            mcp_thinking_tool: MCP sequential thinking tool for LLM-based tool selection
+            use_llm_tool_selector: Whether to use LLM-based tool selection instead of pattern matching
         """
         self.model_provider = model_provider
         self.tools = tools
@@ -137,12 +143,95 @@ class ReActLoop:
         self.max_iterations = max_iterations
         self.debug_mode = debug_mode
         self.llm_response_func = llm_response_func
+        self.use_llm_tool_selector = use_llm_tool_selector
+        
+        # Initialize LLM tool selector if enabled and thinking tool is available
+        self.llm_tool_selector = None
+        if use_llm_tool_selector and mcp_thinking_tool:
+            try:
+                self.llm_tool_selector = LLMToolSelector(mcp_thinking_tool)
+                self.logger.info("Initialized LLM-based tool selector")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize LLM tool selector: {e}, falling back to pattern matching")
+                self.use_llm_tool_selector = False
+        elif use_llm_tool_selector:
+            self.logger.warning("LLM tool selector requested but no MCP thinking tool provided, using pattern matching")
+            self.use_llm_tool_selector = False
         
         # Reasoning state
         self.scratchpad: List[ReActStep] = []
         self.current_phase = ReActPhase.THINK
         self.iteration_count = 0
     
+    def _reset_state(self) -> None:
+        """Reset the reasoning state for a new conversation."""
+        self.scratchpad = []
+        self.current_phase = ReActPhase.THINK
+        self.iteration_count = 0
+    
+    def _build_context_summary(self) -> str:
+        """Build a summary of the current reasoning context."""
+        if not self.scratchpad:
+            return "No previous reasoning steps."
+        
+        context_parts = []
+        for step in self.scratchpad[-3:]:  # Last 3 steps for context
+            if step.phase == ReActPhase.ACT and step.tool_result:
+                context_parts.append(f"Used {step.tool_name}: {step.tool_result[:100]}...")
+            elif step.phase == ReActPhase.THINK:
+                context_parts.append(f"Thought: {step.content[:100]}...")
+        
+        return "\n".join(context_parts) if context_parts else "No relevant context."
+    
+    async def _translate_to_english(self, query: str) -> tuple[str, str]:
+        """
+        Translate user query to English if needed.
+        
+        Args:
+            query: Original user query in any language
+            
+        Returns:
+            Tuple of (translated_query, original_query)
+        """
+        # Check if query appears to be in English already
+        # Simple heuristic: if query contains mostly English words, skip translation
+        english_indicators = ['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']
+        words = query.lower().split()
+        english_word_count = sum(1 for word in words if any(indicator in word for indicator in english_indicators))
+        
+        # If more than 30% of words contain English indicators, assume it's English
+        if len(words) > 0 and (english_word_count / len(words)) > 0.3:
+            return query, query
+        
+        # Attempt translation using LLM
+        if self.llm_response_func:
+            translation_prompt = f"""Translate the following text to English. If the text is already in English, return it unchanged. Only return the translated text, no explanations:
+
+"{query}"
+
+Translation:"""
+            
+            try:
+                translated = await self.llm_response_func(translation_prompt)
+                # Clean up the response - remove quotes, extra whitespace
+                translated = translated.strip().strip('"').strip("'").strip()
+                
+                self.logger.info(
+                    "Query translation completed",
+                    original=query,
+                    translated=translated,
+                    was_translated=(translated != query)
+                )
+                
+                return translated, query
+                
+            except Exception as e:
+                self.logger.warning(f"Translation failed, using original query: {e}")
+                return query, query
+        else:
+            # No LLM function available, use original query
+            return query, query
+
     async def execute(self, query: str, context: Any) -> ReActResult:
         """
         Execute the ReAct reasoning loop for a given query.
@@ -163,8 +252,29 @@ class ReActLoop:
         # Initialize reasoning state
         self._reset_state()
         
-        # Start with initial thinking phase
-        current_thought = f"I need to help the user with: {query}\n\nLet me think about what I need to do."
+        # FIRST STEP: Translate query to English for better tool selection and reasoning
+        translated_query, original_query = await self._translate_to_english(query)
+        
+        # Update context with translated query for tool selection
+        if hasattr(context, 'user_query'):
+            context.original_user_query = context.user_query  # Store original
+            context.user_query = translated_query  # Use translated for tool selection
+        else:
+            # If context doesn't have user_query, add it
+            setattr(context, 'user_query', translated_query)
+            setattr(context, 'original_user_query', query)
+        
+        # Add translation step to reasoning trace if translation occurred
+        if translated_query != original_query:
+            translation_step = ReActStep(
+                phase=ReActPhase.THINK,
+                step_number=len(self.scratchpad) + 1,
+                content=f"TRANSLATION: Original query '{original_query}' translated to English: '{translated_query}'"
+            )
+            self.scratchpad.append(translation_step)
+        
+        # Start with initial thinking phase using the translated query
+        current_thought = f"I need to help the user with: {translated_query}\n\nLet me think about what I need to do."
         
         try:
             while (self.iteration_count < self.max_iterations and 
@@ -183,7 +293,7 @@ class ReActLoop:
                     await self._observe_phase(context)
             
             # Generate final response
-            final_response = await self._generate_final_response(query, context)
+            final_response = await self._generate_final_response(translated_query, context)
             
             result = ReActResult(
                 response=final_response,
@@ -197,7 +307,9 @@ class ReActLoop:
                 "ReAct loop completed successfully",
                 conversation_id=getattr(context, 'conversation_id', 'unknown'),
                 iterations=self.iteration_count,
-                tools_used=result.tools_used
+                tools_used=result.tools_used,
+                original_query=original_query,
+                translated_query=translated_query
             )
             
             return result
@@ -405,11 +517,31 @@ Think about whether I have enough information to answer the user's question or i
         Decide which tool to use based on current reasoning state.
         
         Analyzes the conversation context and reasoning history to determine
-        the appropriate tool and arguments.
+        the appropriate tool and arguments. Uses LLM-based selection when available,
+        falls back to pattern matching.
         """
         if not self.scratchpad:
             return None
         
+        # Try LLM-based tool selection first if enabled
+        if self.use_llm_tool_selector and self.llm_tool_selector:
+            llm_result = await self._llm_based_tool_selection(context)
+            if llm_result:
+                self.logger.info(f"Using LLM-selected tool: {llm_result['tool']}")
+                return llm_result
+            else:
+                self.logger.warning("LLM tool selection failed, falling back to pattern matching")
+        
+        # Fallback to pattern-based tool selection
+        return await self._pattern_based_tool_selection(context)
+    
+    async def _pattern_based_tool_selection(self, context: Any) -> Optional[Dict[str, Any]]:
+        """
+        Original pattern-based tool selection logic as fallback.
+        
+        This method contains the original tool selection logic based on keyword
+        and pattern matching, kept as a reliable fallback.
+        """
         # Get the current thought and build context
         last_thought = self.scratchpad[-1].content
         context_summary = self._build_context_summary()
@@ -476,14 +608,28 @@ Think about whether I have enough information to answer the user's question or i
         if (("directories" in query_lower or "directory" in query_lower or "folders" in query_lower or 
              "folder" in query_lower or "cartelle" in query_lower) and
             ("list" in query_lower or "show" in query_lower or "mostra" in query_lower or 
-             "lista" in query_lower)):
+             "lista" in query_lower) and
+            not ("file" in query_lower)):  # Only directories, not files+directories
             if self.logger:
                 self.logger.debug("Directory listing request detected", query=user_query)
             return {"tool": "list_directories", "args": {}}
         
+        # Check for Italian "tutti i file e cartelle" pattern - this should select list_all
+        elif (("tutti" in query_lower or "all" in query_lower) and 
+              (("file" in query_lower and ("cartelle" in query_lower or "directory" in query_lower or "directories" in query_lower)) or
+               ("files" in query_lower and ("cartelle" in query_lower or "directory" in query_lower or "directories" in query_lower)) or
+               ("lista" in query_lower and "file" in query_lower and "cartelle" in query_lower))):
+            if self.logger:
+                self.logger.debug("Italian files and directories request detected", query=user_query)
+            return {"tool": "list_all", "args": {}}
+        
         # Check for "list all" or "show all" - use list_all that shows both files and directories
         elif (("list" in query_lower and "all" in query_lower) or 
-              ("show" in query_lower and "all" in query_lower)):
+              ("show" in query_lower and "all" in query_lower) or
+              ("lista" in query_lower and "tutti" in query_lower) or
+              # Handle "file e cartelle" - files and directories together
+              ("file" in query_lower and "cartelle" in query_lower) or
+              ("files" in query_lower and "cartelle" in query_lower)):
             return {"tool": "list_all", "args": {}}
         
         # Check for explicit file listing (avoid conflict with directory listing)
@@ -560,354 +706,308 @@ Think about whether I have enough information to answer the user's question or i
         
         return None
     
-    async def _should_continue_reasoning(self) -> bool:
-        """Determine if reasoning should continue or complete."""
-        # Simple heuristic - continue if we haven't reached a conclusion
-        if len(self.scratchpad) < 2:
-            return True
+    async def _llm_based_tool_selection(self, context: Any) -> Optional[Dict[str, Any]]:
+        """
+        Use LLM-based reasoning to select the most appropriate tool.
         
-        # Get the original user query to check for multi-step operations
-        user_query = ""
-        for step in self.scratchpad:
-            if hasattr(step, 'content') and 'I need to help the user with:' in step.content:
-                lines = step.content.split('\n')
-                for line in lines:
-                    if 'I need to help the user with:' in line:
-                        user_query = line.split('I need to help the user with:')[1].strip()
-                        break
-                break
-        
-        # Check for multi-step operations
-        query_lower = user_query.lower()
-        if ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
-            actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
-            # If we only did one action in a multi-step request, continue
-            if len(actions_taken) == 1 and ("list" in query_lower and "read" in query_lower):
-                return True
-        
-        # Check for "largest" file multi-step operations
-        if "largest" in query_lower or "biggest" in query_lower:
-            actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
-            if len(actions_taken) == 1 and actions_taken[0].tool_name == "list_files":
-                # We listed files, now need to find the largest
-                return True
-            elif len(actions_taken) == 2 and actions_taken[-1].tool_name == "find_largest_file":
-                # We found the largest file, continue if user wants to read it
-                if "read" in query_lower or "content" in query_lower or "what" in query_lower:
-                    return True
-                return False  # Just wanted to know the largest, we're done
-        
-        # Check if we've done too many iterations of the same action
-        recent_actions = [step for step in self.scratchpad[-4:] if step.phase == ReActPhase.ACT]
-        if len(recent_actions) >= 3:
-            # Check if we're repeating the same tool
-            tool_names = [action.tool_name for action in recent_actions]
-            if len(set(tool_names)) == 1:  # All same tool
-                return False  # Stop repeating
-        
-        last_observation = self.scratchpad[-1].content.lower()
-        
-        # Stop if we got an error or completed the task
-        stop_phrases = ["failed", "error", "completed", "done", "finished"]
-        
-        # Also stop if we got a meaningful result (like an empty list or file content)
-        if any(phrase in last_observation for phrase in stop_phrases):
-            return False
+        This method leverages the LLMToolSelector to make intelligent tool choices
+        based on semantic understanding rather than simple pattern matching.
+        """
+        if not self.llm_tool_selector:
+            return None
             
-        # Stop if we have a clear result from our actions
-        last_actions = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
-        if last_actions:
-            last_action = last_actions[-1]
-            # If we got a result (even empty), that's often sufficient
-            if last_action.tool_result is not None:
-                # For list_files, even empty result is valid - unless this is multi-step
-                if last_action.tool_name == "list_files":
-                    # Continue if this is part of a multi-step operation
-                    if ("first" in query_lower and "then" in query_lower) or ("list" in query_lower and "read" in query_lower):
-                        return len(last_actions) == 1  # Continue if we only did list_files
-                    return False
-                # For other tools, check if we got meaningful content
-                elif last_action.tool_result.strip():
-                    return False
+        # Get the current context and user query
+        user_query = getattr(context, 'user_query', '')
+        if not user_query:
+            return None
         
-        return True
+        # Build available tools dictionary with descriptions
+        available_tools = self._build_tools_metadata()
+        
+        # Build context for the LLM selector
+        llm_context = self._build_llm_context(context)
+        
+        try:
+            # Use LLM tool selector to choose the best tool
+            selection_result: ToolSelectionResult = await self.llm_tool_selector.select_tool(
+                user_query=user_query,
+                available_tools=available_tools,
+                context=llm_context
+            )
+            
+            self.logger.info(
+                f"LLM selected tool: {selection_result.selected_tool} "
+                f"(confidence: {selection_result.confidence:.2f})"
+            )
+            
+            # Log the reasoning for debugging
+            if self.debug_mode:
+                self.logger.debug(f"LLM tool selection reasoning: {selection_result.reasoning[:200]}...")
+            
+            # Convert to the expected format
+            tool_action = {"tool": selection_result.selected_tool, "args": {}}
+            
+            # Add suggested parameters if available
+            if selection_result.suggested_parameters:
+                tool_action["args"].update(selection_result.suggested_parameters)
+            
+            # Handle special cases where we need to extract parameters from context
+            if selection_result.selected_tool in ["read_file", "write_file", "delete_file", "get_file_info"]:
+                if "filename" not in tool_action["args"]:
+                    # Try to extract filename from reasoning or context
+                    filename = self._extract_filename_from_context(context, selection_result)
+                    if filename:
+                        tool_action["args"]["filename"] = filename
+            
+            return tool_action
+            
+        except Exception as e:
+            self.logger.error(f"Error in LLM tool selection: {e}")
+            return None  # Fall back to pattern matching
+    
+    def _build_tools_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """Build metadata about available tools for the LLM selector."""
+        tools_metadata = {}
+        
+        # Define tool descriptions - these would ideally come from tool definitions
+        tool_descriptions = {
+            "list_files": {
+                "description": "List all files in the current directory",
+                "parameters": {}
+            },
+            "list_directories": {
+                "description": "List only directories/folders in the current directory",
+                "parameters": {}
+            },
+            "list_all": {
+                "description": "List both files and directories in the current directory",
+                "parameters": {}
+            },
+            "read_file": {
+                "description": "Read the contents of a specific file",
+                "parameters": {"filename": "string"}
+            },
+            "write_file": {
+                "description": "Write content to a file",
+                "parameters": {"filename": "string", "content": "string"}
+            },
+            "delete_file": {
+                "description": "Delete a specific file",
+                "parameters": {"filename": "string"}
+            },
+            "get_file_info": {
+                "description": "Get detailed information about a file (size, dates, permissions)",
+                "parameters": {"filename": "string"}
+            },
+            "find_files_by_pattern": {
+                "description": "Find files matching a specific pattern or containing text",
+                "parameters": {"pattern": "string"}
+            },
+            "read_newest_file": {
+                "description": "Read the contents of the most recently modified file",
+                "parameters": {}
+            },
+            "find_largest_file": {
+                "description": "Find the largest file in the directory",
+                "parameters": {}
+            },
+            "answer_question_about_files": {
+                "description": "Answer questions about files using AI analysis",
+                "parameters": {"query": "string"}
+            },
+            "help": {
+                "description": "Get help and list available commands",
+                "parameters": {}
+            }
+        }
+        
+        # Only include tools that are actually available
+        for tool_name in self.tools.keys():
+            if tool_name in tool_descriptions:
+                tools_metadata[tool_name] = tool_descriptions[tool_name]
+            else:
+                # Fallback for unknown tools
+                tools_metadata[tool_name] = {
+                    "description": f"Tool: {tool_name}",
+                    "parameters": {}
+                }
+        
+        return tools_metadata
+    
+    def _build_llm_context(self, context: Any) -> Dict[str, Any]:
+        """Build context information for the LLM tool selector."""
+        llm_context = {}
+        
+        # Add current directory if available
+        if hasattr(context, 'current_directory'):
+            llm_context['current_directory'] = context.current_directory
+        
+        # Add previous actions from scratchpad
+        actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
+        if actions_taken:
+            llm_context['previous_action'] = actions_taken[-1].tool_name
+            llm_context['actions_history'] = [s.tool_name for s in actions_taken]
+        
+        # Add any discovered files from tool chain context
+        if hasattr(context, 'tool_chain_context') and context.tool_chain_context:
+            if context.tool_chain_context.discovered_files:
+                llm_context['discovered_files'] = context.tool_chain_context.get_recent_files()
+        
+        # Detect language from user query if possible
+        user_query = getattr(context, 'user_query', '')
+        if any(italian_word in user_query.lower() for italian_word in ['lista', 'cartelle', 'directory', 'mostra']):
+            llm_context['user_language'] = 'Italian'
+        
+        return llm_context
+    
+    def _extract_filename_from_context(self, context: Any, selection_result: ToolSelectionResult) -> Optional[str]:
+        """Extract filename from context or reasoning for file operations."""
+        # First check suggested parameters
+        if 'filename' in selection_result.suggested_parameters:
+            return selection_result.suggested_parameters['filename']
+        
+        # Try to extract from reasoning
+        reasoning_lower = selection_result.reasoning.lower()
+        user_query = getattr(context, 'user_query', '')
+        
+        # Use existing extraction method
+        filename = self._extract_filename("", user_query)
+        if filename and filename != "LATEST_FILE":
+            return filename
+            
+        return None
+    
+    async def _should_continue_reasoning(self) -> bool:
+        """Determine if reasoning should continue or if we can complete."""
+        # Check if we've hit the max iterations
+        if self.iteration_count >= self.max_iterations:
+            return False
+        
+        # Check if we have enough information to provide a response
+        actions_taken = [s for s in self.scratchpad if s.phase == ReActPhase.ACT]
+        if not actions_taken:
+            return True  # Haven't taken any actions yet
+        
+        # If we've taken actions, check if the last one was successful
+        last_action = actions_taken[-1]
+        if last_action.tool_result and "error" not in last_action.tool_result.lower():
+            return False  # Successful action, can complete
+        
+        return len(actions_taken) < 3  # Allow up to 3 actions
     
     async def _generate_final_response(self, query: str, context: Any) -> str:
         """Generate the final response based on reasoning steps."""
-        if not self.scratchpad:
-            return "I wasn't able to process your request."
-        
-        # Get all actions and their results
-        actions_taken = [step for step in self.scratchpad if step.phase == ReActPhase.ACT]
-        
-        if not actions_taken:
-            return f"I analyzed your request '{query}' but determined no actions were needed."
-        
-        # Build a comprehensive response based on what was accomplished
-        response_parts = []
-        
-        # Check if this was a question-answering task
-        if any(step.tool_name == "answer_question_about_files" for step in actions_taken):
-            # For Q&A, return the answer directly
-            for step in actions_taken:
-                if step.tool_name == "answer_question_about_files" and step.tool_result:
+        # Find the most recent successful tool result
+        for step in reversed(self.scratchpad):
+            if step.phase == ReActPhase.ACT and step.tool_result:
+                if "error" not in step.tool_result.lower():
                     return step.tool_result
         
-        # For file operations, provide a summary
-        successful_actions = []
-        failed_actions = []
-        
-        for action in actions_taken:
-            # Check if action failed by looking for specific failure indicators
-            if (action.tool_result and 
-                ("tool execution failed" in action.tool_result.lower() or
-                 "file not found" in action.tool_result.lower() or
-                 "error" in action.tool_result.lower() and "error" in action.content.lower())):
-                failed_actions.append(action)
-            elif action.tool_result:  # Has result and no failure indicators
-                successful_actions.append(action)
-            else:  # No result at all
-                failed_actions.append(action)
-        
-        # Handle different types of responses
-        if successful_actions:
-            response_parts.append("I successfully completed the following actions:")
-            
-            for action in successful_actions:
-                tool_name = action.tool_name
-                result = action.tool_result
-                
-                if tool_name == "list_files":
-                    # Parse file count from formatted result
-                    if "Found 0 files" in result:
-                        file_count = 0
-                        response_parts.append("• Found no files in the workspace (empty)")
-                    elif "Found" in result and "files" in result:
-                        # Extract count from "Found X files" pattern
-                        import re
-                        match = re.search(r'Found (\d+) files', result)
-                        if match:
-                            file_count = int(match.group(1))
-                            response_parts.append(f"• Listed {file_count} files in the workspace")
-                        else:
-                            file_count = len(result.split('\n')) if result else 0
-                            response_parts.append(f"• Listed files in the workspace")
-                    else:
-                        file_count = len(result.split('\n')) if result else 0
-                        response_parts.append(f"• Listed files in the workspace")
-                    
-                    if result and file_count > 0:
-                        response_parts.append(f"  Files: {result}")
-                
-                elif tool_name == "read_file":
-                    filename = action.tool_args.get('filename', 'unknown')
-                    content_length = len(result) if result else 0
-                    response_parts.append(f"• Read file '{filename}' ({content_length} characters)")
-                    if result and len(result) < 500:  # Show content if not too long
-                        response_parts.append(f"  Content: {result}")
-                    elif result:
-                        response_parts.append(f"  Content preview: {result[:200]}...")
-                
-                elif tool_name == "write_file":
-                    filename = action.tool_args.get('filename', 'unknown')
-                    response_parts.append(f"• Created/wrote file '{filename}'")
-                    if result:
-                        response_parts.append(f"  Result: {result}")
-                
-                elif tool_name == "delete_file":
-                    filename = action.tool_args.get('filename', 'unknown')
-                    response_parts.append(f"• Deleted file '{filename}'")
-                
-                elif tool_name == "read_newest_file":
-                    response_parts.append(f"• Read newest file from workspace")
-                    if result:
-                        if len(result) < 500:  # Show full content if not too long
-                            response_parts.append(f"  Result: {result}")
-                        else:
-                            response_parts.append(f"  Result preview: {result[:200]}...")
-                
-                elif tool_name == "find_files_by_pattern":
-                    pattern = action.tool_args.get('pattern', 'unknown') if action.tool_args else 'unknown'
-                    response_parts.append(f"• Found files matching pattern '{pattern}'")
-                    if result:
-                        response_parts.append(f"  Result: {result}")
-                
-                elif tool_name == "get_file_info":
-                    filename = action.tool_args.get('filename', 'unknown') if action.tool_args else 'unknown'
-                    response_parts.append(f"• Got information for file '{filename}'")
-                    if result:
-                        response_parts.append(f"  Result: {result}")
-                
-                elif tool_name == "find_largest_file":
-                    response_parts.append(f"• Found largest file in workspace")
-                    if result:
-                        response_parts.append(f"  Result: {result}")
-                
-                elif tool_name == "answer_question_about_files":
-                    query = action.tool_args.get('query', 'unknown') if action.tool_args else 'unknown'
-                    response_parts.append(f"• Answered question: '{query}'")
-                    if result:
-                        response_parts.append(f"  Result: {result}")
-                
-                else:
-                    # Generic fallback for any other tools
-                    response_parts.append(f"• Used {tool_name}")
-                    if result:
-                        if len(result) < 200:
-                            response_parts.append(f"  Result: {result}")
-                        else:
-                            response_parts.append(f"  Result preview: {result[:200]}...")
-        
-        if failed_actions:
-            response_parts.append("\nSome actions encountered issues:")
-            for action in failed_actions:
-                tool_name = action.tool_name
-                filename = action.tool_args.get('filename', 'unknown') if action.tool_args else 'unknown'
-                response_parts.append(f"• {tool_name} on '{filename}': {action.tool_result}")
-        
-        if not response_parts:
-            return "I processed your request but didn't get clear results from the actions taken."
-        
-        return "\n".join(response_parts)
-    
-    def _reset_state(self) -> None:
-        """Reset the reasoning state for a new query."""
-        self.scratchpad.clear()
-        self.current_phase = ReActPhase.THINK
-        self.iteration_count = 0
+        # If no successful tool execution, provide a helpful message
+        return "I wasn't able to complete your request successfully. Please try rephrasing your question."
     
     def _get_tools_used(self) -> List[str]:
-        """Get list of tools that were used during reasoning."""
-        return [
-            step.tool_name for step in self.scratchpad 
-            if step.phase == ReActPhase.ACT and step.tool_name
-        ]
+        """Get list of tools used during reasoning."""
+        tools_used = []
+        for step in self.scratchpad:
+            if step.phase == ReActPhase.ACT and step.tool_name:
+                tools_used.append(step.tool_name)
+        return tools_used
     
     def _format_reasoning_steps(self) -> List[Dict[str, Any]]:
-        """Format reasoning steps for external consumption."""
-        return [
-            {
-                "step": step.step_number,
+        """Format reasoning steps for the result."""
+        formatted_steps = []
+        for step in self.scratchpad:
+            step_dict = {
                 "phase": step.phase.value,
-                "content": step.content,
-                "tool": step.tool_name,
-                "args": step.tool_args,
-                "result": step.tool_result
+                "step_number": step.step_number,
+                "content": step.content
             }
-            for step in self.scratchpad
-        ]
+            if step.tool_name:
+                step_dict["tool_name"] = step.tool_name
+            if step.tool_args:
+                step_dict["tool_args"] = step.tool_args
+            if step.tool_result:
+                step_dict["tool_result"] = step.tool_result
+            formatted_steps.append(step_dict)
+        return formatted_steps
     
-    def _build_context_summary(self) -> str:
-        """Build a summary of the reasoning context so far."""
-        if not self.scratchpad:
-            return "No previous steps."
-        
-        summary_parts = []
-        for step in self.scratchpad[-3:]:  # Last 3 steps for context
-            if step.phase == ReActPhase.THINK:
-                summary_parts.append(f"Thought: {step.content[:100]}...")
-            elif step.phase == ReActPhase.ACT:
-                summary_parts.append(f"Action: {step.tool_name} -> {step.tool_result[:100] if step.tool_result else 'No result'}...")
-            elif step.phase == ReActPhase.OBSERVE:
-                summary_parts.append(f"Observation: {step.content[:100]}...")
-        
-        return "\n".join(summary_parts) if summary_parts else "No previous steps."
-    
-    def _extract_filename(self, thought: str, user_query: str) -> Optional[str]:
-        """
-        Extract filename from thought or user query.
-        
-        Uses simple pattern matching to find filenames in text.
-        """
+    def _extract_filename(self, thought: str, query: str) -> Optional[str]:
+        """Extract filename from thought or query text."""
         import re
         
-        # Look for quoted filenames
-        quoted_pattern = r'["\']([^"\']+\.[a-zA-Z0-9]+)["\']'
-        
         # Look for common filename patterns
-        filename_pattern = r'\b([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)\b'
+        filename_patterns = [
+            r"filename[:\s]+([^\s,\.]+\.[a-zA-Z0-9]+)",
+            r"file[:\s]+([^\s,\.]+\.[a-zA-Z0-9]+)",
+            r"read[:\s]+([^\s,\.]+\.[a-zA-Z0-9]+)",
+            r"([a-zA-Z0-9_-]+\.[a-zA-Z0-9]+)",  # General filename pattern
+            r"'([^']+\.[a-zA-Z0-9]+)'",  # Quoted filename
+            r'"([^"]+\.[a-zA-Z0-9]+)"'   # Double quoted filename
+        ]
         
-        # Try quoted first
-        for text in [thought, user_query]:
-            quoted_match = re.search(quoted_pattern, text)
-            if quoted_match:
-                return quoted_match.group(1)
+        text = f"{thought} {query}".lower()
         
-        # Then try general pattern
-        for text in [thought, user_query]:
-            filename_match = re.search(filename_pattern, text)
-            if filename_match:
-                candidate = filename_match.group(1)
-                # Avoid common false positives
-                if candidate not in ['example.txt', 'test.py', 'file.txt']:
-                    return candidate
+        for pattern in filename_patterns:
+            match = re.search(pattern, text)
+            if match:
+                return match.group(1)
         
-        # Look for "latest", "newest", "most recent" patterns
-        if any(word in thought.lower() + user_query.lower() 
-               for word in ['latest', 'newest', 'most recent', 'last modified']):
-            return "LATEST_FILE"  # Special marker for latest file logic
+        # Special keywords
+        if "newest" in text or "latest" in text:
+            return "LATEST_FILE"
         
         return None
     
-    def _extract_content(self, thought: str, user_query: str) -> Optional[str]:
-        """Extract content to write from thought or user query."""
+    def _extract_pattern(self, query: str) -> Optional[str]:
+        """Extract search pattern from query text."""
         import re
+        
+        # Look for pattern in quotes
+        pattern_matches = re.findall(r"pattern[:\s]+[\"']([^\"']+)[\"']", query.lower())
+        if pattern_matches:
+            return pattern_matches[0]
+        
+        # Look for file extensions
+        ext_matches = re.findall(r"\*\.([a-zA-Z0-9]+)", query)
+        if ext_matches:
+            return f"*.{ext_matches[0]}"
+        
+        # Look for "containing" patterns
+        containing_matches = re.findall(r"containing[:\s]+[\"']([^\"']+)[\"']", query.lower())
+        if containing_matches:
+            return containing_matches[0]
+        
+        return None
+    
+    def _extract_content(self, thought: str, query: str) -> Optional[str]:
+        """Extract content to write from thought or query."""
+        import re
+        
+        text = f"{thought} {query}"
         
         # Look for content in quotes
         content_patterns = [
-            r'content[:\s]+["\']([^"\']+)["\']',
-            r'write[:\s]+["\']([^"\']+)["\']',
-            r'["\']([^"\']{10,})["\']',  # Any long quoted string
+            r"content[:\s]+[\"']([^\"']+)[\"']",
+            r"write[:\s]+[\"']([^\"']+)[\"']",
+            r"save[:\s]+[\"']([^\"']+)[\"']"
         ]
         
-        for text in [thought, user_query]:
-            for pattern in content_patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    return match.group(1)
+        for pattern in content_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1)
         
         return None
     
-    def _extract_question(self, thought: str, user_query: str) -> Optional[str]:
-        """Extract question text for the answer_question_about_files tool."""
-        # The user query itself is often the question
-        if len(user_query) > 10 and any(word in user_query.lower() 
-                                       for word in ['what', 'how', 'why', 'when', 'where', 'which', '?']):
-            return user_query
+    def _extract_question(self, thought: str, query: str) -> Optional[str]:
+        """Extract question text for question answering tool."""
+        # Use the original query as the question
+        if query.strip():
+            return query.strip()
         
-        # Look for question patterns in thought
-        if '?' in thought:
-            sentences = thought.split('.')
-            for sentence in sentences:
-                if '?' in sentence:
-                    return sentence.strip()
-        
-        return user_query  # Default to original query
-
-    def _extract_pattern(self, text: str) -> Optional[str]:
-        """Extract search pattern from text."""
-        import re
-        
-        # Look for patterns in quotes
-        quoted_pattern = r"['\"]([^'\"]+)['\"]"
-        match = re.search(quoted_pattern, text)
-        if match:
-            return match.group(1)
-        
-        # Look for "containing X" patterns
-        containing_pattern = r"containing\s+['\"]?([^'\"\s]+)['\"]?"
-        match = re.search(containing_pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1)
-        
-        # Look for common patterns
-        if "txt" in text.lower():
-            return "txt"
-        elif "json" in text.lower():
-            return "json"
-        elif "log" in text.lower():
-            return "log"
-        elif "config" in text.lower():
-            return "config"
+        # Fall back to extracting from thought
+        if "question" in thought.lower():
+            return thought.strip()
         
         return None

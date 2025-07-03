@@ -205,6 +205,7 @@ class ConversationContext(BaseModel):
     
     conversation_id: str
     user_query: str
+    original_user_query: Optional[str] = None  # Added for translation support
     workspace_path: str
     timestamp: datetime
     debug_mode: bool = False
@@ -291,13 +292,15 @@ class SecureAgent:
         # Add advanced file operations (Task 4.3)
         self._add_advanced_file_operations()
         
-        # Initialize ReAct loop
+        # Initialize ReAct loop with proper configuration
         self.react_loop = ReActLoop(
             model_provider=self.model_provider,
             tools=self.file_tools,
             logger=self.logger,
             debug_mode=debug_mode,
-            llm_response_func=self._get_llm_response
+            llm_response_func=self._get_llm_response,
+            mcp_thinking_tool=None,  # No MCP tool available, will use pattern matching
+            use_llm_tool_selector=False  # Disabled until MCP tool is available
         )
         
         # Initialize Pydantic-AI agent
