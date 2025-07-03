@@ -130,8 +130,18 @@ class ToolResultFormatter:
         elif tool_name == "delete_file":
             return f"✅ File deleted{time_info}: {str(result)}"
         
+        elif tool_name == "tree":
+            # Tree view gets special formatting to preserve structure
+            if isinstance(result, str):
+                lines = result.split('\n')
+                line_count = len(lines)
+                return f"✅ WORKSPACE TREE STRUCTURE{time_info}\n📊 Total: {line_count} lines in tree view\n\n{result}"
+            else:
+                return f"✅ Tree view{time_info}:\n{str(result)}"
+        
         elif tool_name == "show_complete_workspace":
-            return f"✅ Complete workspace contents{time_info}:\n{str(result)}"
+            # Return the result as-is since it's already formatted
+            return str(result)
         
         elif tool_name in ["get_file_info", "find_files_by_pattern", "read_newest_file"]:
             return f"✅ {tool_name.replace('_', ' ').title()}{time_info}:\n{str(result)}"
@@ -384,6 +394,7 @@ CORE FILE OPERATIONS:
 - list_files(): List all files in the workspace (sorted by modification time, newest first)
 - list_directories(): List all directories in the workspace (sorted by modification time, newest first)
 - list_all(): List both files and directories (directories marked with '/')
+- tree(): Display workspace structure in beautiful tree format - perfect for understanding project hierarchy
 - show_complete_workspace(): Show COMPLETE workspace contents with NO truncation - guarantees ALL items are displayed
 - read_file(filename): Read content from a file
 - write_file(filename, content, mode): Write content to a file
@@ -395,10 +406,14 @@ ADVANCED OPERATIONS:
 - find_files_by_pattern(pattern): Find files matching a pattern (substring search)
 - get_file_info(filename): Get detailed metadata about a file
 
-IMPORTANT: When user asks for complete listing or "tutto" or wants to see ALL files/folders:
-- Use show_complete_workspace() to guarantee complete display
-- This tool NEVER truncates and shows every single item
-- Perfect for when user specifically wants to see everything
+VISUALIZATION TOOLS:
+- tree(): Perfect for seeing directory structure - shows beautiful tree format with recursive navigation
+- Use this when user wants to see "structure", "tree", "hierarchy", or "organization" of files/folders
+
+IMPORTANT: When user asks for complete listing, tree structure, or wants to see the project organization:
+- Use tree() for beautiful hierarchical visualization of the complete project structure
+- Use show_complete_workspace() to guarantee complete display without truncation
+- These tools NEVER truncate and show every single item
 
 IMPORTANT CONSTRAINTS:
 1. You can ONLY operate on files within your assigned workspace
@@ -934,6 +949,60 @@ Please interpret the user's response in the context of the previous conversation
         self.file_tools["get_file_info"] = get_file_info
         self.file_tools["find_largest_file"] = find_largest_file
         self.file_tools["find_files_by_extension"] = find_files_by_extension
+        
+        # Add a dedicated "show all" tool for complete listing
+        def show_complete_workspace() -> str:
+            """Show complete workspace contents without any truncation or formatting limits."""
+            start_time = time.time()
+            try:
+                # Get raw tools to avoid double formatting
+                raw_tools = create_file_tools(self.workspace)
+                all_items = raw_tools["list_all"]()
+                execution_time = time.time() - start_time
+                
+                if not all_items:
+                    return f"✅ Workspace is completely empty ({execution_time:.2f}s)"
+                
+                # Separate files and directories
+                files = [item for item in all_items if not item.endswith('/')]
+                directories = [item.rstrip('/') for item in all_items if item.endswith('/')]
+                
+                result_parts = []
+                result_parts.append(f"✅ COMPLETE WORKSPACE CONTENTS ({execution_time:.2f}s)")
+                result_parts.append(f"📊 Total: {len(all_items)} items ({len(directories)} directories, {len(files)} files)")
+                result_parts.append("")
+                
+                if directories:
+                    result_parts.append("📁 DIRECTORIES:")
+                    for i, directory in enumerate(directories, 1):
+                        result_parts.append(f"   {i:2d}. 📁 {directory}/")
+                    result_parts.append("")
+                
+                if files:
+                    result_parts.append("📄 FILES:")
+                    for i, file in enumerate(files, 1):
+                        result_parts.append(f"   {i:2d}. 📄 {file}")
+                
+                return "\n".join(result_parts)
+                
+            except Exception as e:
+                execution_time = time.time() - start_time
+                return f"❌ Error listing workspace contents ({execution_time:.2f}s): {str(e)}"
+        
+        # Attach metadata
+        show_complete_workspace.tool_metadata = {
+            "description": "Show complete workspace contents with guaranteed no truncation - always displays ALL files and directories",
+            "parameters": {},
+            "examples": [
+                "show complete workspace",
+                "list everything without truncation",
+                "mostra tutto completo",
+                "elenco completo di tutto"
+            ]
+        }
+        
+        # Add the complete listing tool
+        self.file_tools["show_complete_workspace"] = show_complete_workspace
     
     def _add_memory_tools(self) -> None:
         """Add memory tools for conversation context tracking."""

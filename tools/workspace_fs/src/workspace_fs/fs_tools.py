@@ -347,6 +347,103 @@ class FileSystemTools:
         except OSError as e:
             raise WorkspaceError(f"Failed to list workspace contents: {e}")
 
+    def list_tree(self) -> str:
+        """
+        Generate a tree view of the workspace structure.
+
+        Creates a hierarchical visualization of all files and directories
+        in the workspace, similar to the Unix 'tree' command. Shows the
+        complete directory structure recursively.
+
+        Returns:
+            Formatted tree string showing the workspace hierarchy.
+
+        Raises:
+            RateLimitError: If rate limit is exceeded.
+            WorkspaceError: If workspace access fails.
+        """
+        self._check_rate_limit()
+
+        try:
+            def _build_tree(path, prefix="", is_last=True):
+                """
+                Recursively build tree structure for a directory.
+
+                Args:
+                    path: Path object to process
+                    prefix: Current line prefix for indentation
+                    is_last: Whether this is the last item in current level
+                """
+                items = []
+
+                # Get the name to display
+                if path == self._workspace.root:
+                    # For the root directory, don't show the line, just process contents
+                    name = None
+                else:
+                    name = path.name
+                    if path.is_dir():
+                        name += "/"
+
+                # Create the current line (skip for root)
+                if name is not None:
+                    connector = "└── " if is_last else "├── "
+                    current_line = f"{prefix}{connector}{name}"
+                    items.append(current_line)
+
+                # If it's a directory, process its contents
+                if path.is_dir():
+                    try:
+                        # Get all items, excluding hidden files and __pycache__
+                        children = [item for item in path.iterdir() 
+                                  if not item.name.startswith(".") and item.name != "__pycache__"]
+
+                        # Sort children: directories first, then files, alphabetically within each group
+                        children.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
+
+                        # Process each child
+                        for i, child in enumerate(children):
+                            is_child_last = (i == len(children) - 1)
+
+                            # Determine new prefix for child
+                            if path == self._workspace.root:
+                                # For root directory, start fresh without prefix
+                                new_prefix = ""
+                            elif is_last:
+                                new_prefix = prefix + "    "  # Empty space for last items
+                            else:
+                                new_prefix = prefix + "│   "  # Vertical line for continuing branches
+
+                            # Recursively build subtree
+                            child_items = _build_tree(child, new_prefix, is_child_last)
+                            items.extend(child_items)
+
+                    except (OSError, PermissionError):
+                        # Add error indicator for inaccessible directories
+                        error_prefix = prefix + ("    " if is_last else "│   ")
+                        items.append(f"{error_prefix}└── [Permission Denied]")
+
+                return items
+
+            # Build the complete tree starting from workspace root
+            tree_lines = _build_tree(self._workspace.root)
+            
+            # Add header with directory name
+            workspace_name = self._workspace.root.name or "workspace"
+            header = f"{workspace_name}/"
+            
+            # Combine header with tree content
+            if tree_lines:
+                result_lines = [header] + tree_lines
+            else:
+                result_lines = [header, "└── (empty)"]
+
+            # Join all lines and return
+            return "\n".join(result_lines)
+
+        except Exception as e:
+            raise WorkspaceError(f"Failed to generate tree view: {e}") from e
+
     def __str__(self) -> str:
         """Return string representation of FileSystemTools."""
         return f"FileSystemTools(workspace={self._workspace}, limits=r:{self._max_read}/w:{self._max_write}/rate:{self._rate_limit})"

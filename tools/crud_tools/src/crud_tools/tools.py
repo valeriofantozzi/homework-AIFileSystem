@@ -35,6 +35,11 @@ TOOL_METADATA = {
         "parameters": {},
         "examples": ["list everything", "show all files and folders", "tutti i file e cartelle"]
     },
+    "tree": {
+        "description": "Display workspace structure in tree format with hierarchical visualization",
+        "parameters": {},
+        "examples": ["show tree", "tree structure", "mostra albero", "visualizza struttura", "tree view"]
+    },
     "read_file": {
         "description": "Read the contents of a specific file",
         "parameters": {"filename": "str"},
@@ -147,6 +152,29 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
     # Attach metadata to the function
     list_all.tool_metadata = TOOL_METADATA["list_all"]
 
+    def tree() -> str:
+        """
+        Display workspace structure in tree format with hierarchical visualization.
+
+        This tool generates a visual representation of the workspace directory
+        structure, similar to the Unix 'tree' command. It shows all files and
+        directories in a hierarchical format with proper indentation and
+        connecting lines.
+
+        Returns:
+            String representation of the workspace tree structure.
+
+        Raises:
+            WorkspaceError: If the workspace cannot be accessed or read.
+        """
+        try:
+            return fs_tools.list_tree()
+        except Exception as e:
+            raise WorkspaceError(f"Failed to generate tree view: {e}") from e
+    
+    # Attach metadata to the function
+    tree.tool_metadata = TOOL_METADATA["tree"]
+
     def read_file(filename: str) -> str:
         """
         Read the complete content of a file from the workspace.
@@ -240,6 +268,7 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
         "list_files": list_files,
         "list_directories": list_directories,
         "list_all": list_all,
+        "tree": tree,
         "read_file": read_file,
         "write_file": write_file,
         "delete_file": delete_file,
