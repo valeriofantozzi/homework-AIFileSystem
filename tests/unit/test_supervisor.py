@@ -172,6 +172,31 @@ class TestRequestSupervisor:
             assert response.intent is not None
             assert response.intent.intent_type == IntentType.FILE_LIST
             assert "list_files" in response.intent.tools_needed
+
+    @patch('agent.supervisor.supervisor.get_model_for_role')
+    @pytest.mark.asyncio
+    async def test_fallback_moderation_project_analysis_query(self, mock_get_model, mock_model_provider, logger):
+        """Test fallback moderation with project analysis query."""
+        mock_get_model.return_value = mock_model_provider
+        
+        # Force agent to be None to trigger fallback
+        with patch.object(RequestSupervisor, '_setup_agent'):
+            supervisor = RequestSupervisor(logger)
+            supervisor.agent = None
+            
+            request = ModerationRequest(
+                user_query="analizza il progetto",
+                conversation_id="test-conv"
+            )
+            
+            response = await supervisor.moderate_request(request)
+            
+            assert response.decision == ModerationDecision.ALLOWED
+            assert response.allowed is True
+            assert response.intent is not None
+            assert response.intent.intent_type == IntentType.PROJECT_ANALYSIS
+            assert "list_files" in response.intent.tools_needed
+            assert "answer_question_about_files" in response.intent.tools_needed
     
     def test_parse_agent_response_valid(self, mock_model_provider, logger):
         """Test parsing valid agent response."""
