@@ -84,31 +84,86 @@ supervisor (light LLM gatekeeper & router)
 ```bash
 /project-root
 ├── agent/                   # Main agent logic
+│   ├── __init__.py
+│   ├── diagnostic_cli.py   # Diagnostic CLI utilities
+│   ├── diagnostics.py      # System diagnostics
 │   ├── core/               # Core agent implementation
+│   │   ├── __init__.py
+│   │   ├── advanced_tools_metadata.py
+│   │   ├── exceptions.py
+│   │   ├── llm_tool_selector.py
+│   │   ├── react_loop.py
+│   │   ├── secure_agent.py
+│   │   └── tool_metadata.py
 │   └── supervisor/         # LLM gatekeeper and safety layer
-├── dev/                    # Development utilities and sandbox
-│   ├── demos/             # Feature demonstrations
-│   └── sandbox/           # Development testing area
+│       ├── __init__.py
+│       └── supervisor.py
 ├── tools/                  # Tool implementations
-│   ├── workspace_fs/      # Secure file system operations
-│   │   ├── src/workspace_fs/
-│   │   └── tests/
-│   └── crud_tools/        # High-level CRUD operations
-│       ├── src/crud_tools/
-│       └── tests/
+│   ├── workspace_fs/       # Secure file system operations
+│   ├── crud_tools/         # High-level CRUD operations
+│   └── memory_tools/       # Memory and context management tools
 ├── chat_interface/         # CLI, notebook, or UI interface
-│   ├── cli_chat/          # Command-line interface
-│   └── demo_streamlit/    # Optional Streamlit web interface
+│   ├── cli_chat/           # Command-line interface
+│   │   ├── __init__.py
+│   │   ├── chat.py
+│   │   └── demo_cli_features.py
+│   └── demo_streamlit/     # Optional Streamlit web interface
+│       └── __init__.py
 ├── server/                 # MCP server implementation
-│   └── api_mcp/           # FastAPI endpoint and manifest
-├── tests/                  # Pytest test cases
-│   ├── integration/       # End-to-end integration tests
-│   ├── unit/              # Unit tests for individual components
-│   └── mocks/             # Mock objects and test utilities
+│   └── api_mcp/            # FastAPI endpoint and manifest
 ├── config/                 # Environment and model configuration system
-│   └── env/               # Environment template files
+│   ├── __init__.py
+│   ├── env_loader.py       # Environment variable loading
+│   ├── exceptions.py       # Configuration exceptions
+│   ├── manage_env.py       # CLI environment management
+│   ├── model_config.py     # Model configuration system
+│   ├── models.yaml         # Model definitions
+│   ├── ENV_SETUP.md        # Environment setup guide
+│   ├── .env.local          # Local environment file (gitignored)
+│   └── env/                # Environment template files
+├── tests/                  # Pytest test cases
+│   ├── __init__.py
+│   ├── conftest.py         # Pytest configuration
+│   ├── README.md           # Testing documentation
+│   ├── test_llm_supervisor.py
+│   ├── test_no_keyword_matching.py
+│   ├── integration/        # End-to-end integration tests
+│   ├── unit/               # Unit tests for individual components
+│   └── mocks/              # Mock objects and test utilities
+├── dev/                    # Development utilities and sandbox
+│   ├── README.md
+│   ├── debug/              # Debug utilities
+│   ├── demos/              # Feature demonstrations
+│   ├── docs/               # Development documentation
+│   ├── logs/               # Development logs
+│   ├── sandbox/            # Development testing area
+│   └── testing/            # Development testing utilities
+├── logs/                   # Application logs
+│   ├── agent_activity.log  # Agent activity logging
+│   ├── errors.log          # Error logging
+│   ├── performance.jsonl   # Performance metrics
+│   ├── usage.jsonl         # Usage analytics
+│   └── conversations/      # Conversation history
 ├── DOCS/                   # Project documentation
-└── htmlcov/               # Coverage reports (generated)
+│   ├── README.md
+│   ├── agent-architecture.md
+│   ├── agent-documentation.md
+│   ├── assignment_AI.md
+│   ├── clear-command-implementation.md
+│   ├── master-plan.md      # This comprehensive plan
+│   ├── troubleshooting.md
+│   ├── usage-guide.md
+│   └── planning/           # Planning documents
+├── .coverage               # Coverage data file
+├── .gitignore              # Git ignore rules
+├── .pytest_cache/          # Pytest cache (generated)
+├── .vscode/                # VS Code configuration
+├── mcp_config.json         # MCP server configuration
+├── poetry.lock             # Poetry lock file
+├── pyproject.toml          # Python project configuration
+├── pytest.ini             # Pytest configuration
+├── pytest_warnings.log    # Pytest warnings log
+└── README.md               # Main project documentation
 ```
 
 _Each sub-package is individually installable (`pip install -e`)._

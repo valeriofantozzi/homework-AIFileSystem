@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "ai-filesystem": {
+    "ai-filesystem-local": {
       "command": "python",
       "args": [
         "server/deployment/start_server.py"
@@ -10,9 +10,19 @@
         "PYTHONPATH": "/Users/valeriofantozzi/Developer/Personal🦄/homework-AIFileSystem",
         "HOST": "127.0.0.1",
         "PORT": "8000",
-        "LOG_LEVEL": "info",
-        "WORKSPACE_PATH": "/Users/valeriofantozzi/Developer/Personal🦄/homework-AIFileSystem/workspace"
+        "LOG_LEVEL": "info"
       }
+    },
+    "ai-filesystem-docker": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-p", "8000:8000",
+        "-v", "${PWD}/workspace:/app/workspace",
+        "ai-filesystem-mcp:latest"
+      ],
+      "cwd": "/Users/valeriofantozzi/Developer/Personal🦄/homework-AIFileSystem"
     }
   }
 }

@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  mcp-server:
+    build:
+      context: ../..
+      dockerfile: server/docker/Dockerfile
+    container_name: ai-filesystem-mcp
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=info
+      - WORKSPACE_PATH=/app/workspace
+    volumes:
+      # Mount workspace for persistent file operations
+      - workspace-data:/app/workspace
+      # Mount logs directory for monitoring
+      - ./logs:/app/logs
+    networks:
+      - mcp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits for production deployment
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+volumes:
+  workspace-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/workspace
+
+networks:
+  mcp-network:
+    driver: bridge
