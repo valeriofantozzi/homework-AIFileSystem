@@ -263,6 +263,125 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
     # Attach metadata to the function
     delete_file.tool_metadata = TOOL_METADATA["delete_file"]
 
+    def list_files_recursive() -> list[str]:
+        """
+        List all files in the workspace recursively, including subdirectories.
+
+        This tool returns files from all subdirectories with relative paths,
+        excluding hidden files and __pycache__ directories.
+        Files are sorted by their last modification time with the most recently
+        modified files appearing first in the list.
+
+        Returns:
+            List of relative file paths sorted by modification time.
+
+        Raises:
+            WorkspaceError: If the workspace cannot be accessed or read.
+        """
+        try:
+            return fs_tools.list_files_recursive()
+        except Exception as e:
+            raise RuntimeError(f"Failed to list files recursively: {e}") from e
+    
+    # Attach metadata to the function
+    list_files_recursive.tool_metadata = {
+        "description": "List all files recursively in all subdirectories",
+        "parameters": {},
+        "examples": [
+            "list all files including in subdirectories",
+            "show me all files recursively",
+            "find all files in the entire workspace"
+        ]
+    }
+
+    def find_file_by_name(filename: str) -> str:
+        """
+        Find a file by exact name searching recursively in all subdirectories.
+
+        This tool searches for a file with the exact name in all subdirectories
+        and returns the relative path if found. Perfect for locating specific files
+        like "secure_agent.py" anywhere in the workspace structure.
+
+        Args:
+            filename: Exact filename to search for (e.g., "secure_agent.py")
+
+        Returns:
+            Relative path to the file if found, error message if not found.
+
+        Raises:
+            WorkspaceError: If the workspace cannot be accessed or read.
+        """
+        try:
+            result = fs_tools.find_file_by_name(filename)
+            if result:
+                return f"Found file: {result}"
+            else:
+                return f"File '{filename}' not found in workspace"
+        except Exception as e:
+            raise RuntimeError(f"Failed to find file '{filename}': {e}") from e
+    
+    # Attach metadata to the function
+    find_file_by_name.tool_metadata = {
+        "description": "Find a file by exact name searching recursively in all subdirectories",
+        "parameters": {
+            "filename": {
+                "type": "string",
+                "description": "Exact filename to search for (e.g., 'secure_agent.py')",
+                "required": True
+            }
+        },
+        "examples": [
+            "find file secure_agent.py",
+            "locate file config.yaml",
+            "search for main.py"
+        ]
+    }
+
+    def read_file_by_path(filepath: str) -> str:
+        """
+        Read content from a file using relative path (supports subdirectories).
+
+        This tool can read files from any subdirectory using relative paths
+        like "agent/core/secure_agent.py". Much more powerful than the basic
+        read_file tool which only works in the root directory.
+
+        Args:
+            filepath: Relative path to the file (e.g., "agent/core/secure_agent.py")
+
+        Returns:
+            The complete file content as a string.
+
+        Raises:
+            FileNotFoundError: If the specified file does not exist.
+            WorkspaceError: If the file cannot be read or is outside workspace.
+        """
+        try:
+            return fs_tools.read_file_by_path(filepath)
+        except (
+            FileNotFoundError, SizeLimitExceeded, PathTraversalError,
+            SymlinkError, ValueError
+        ):
+            raise
+        except Exception as e:
+            raise WorkspaceError(f"Failed to read file '{filepath}': {e}") from e
+    
+    # Attach metadata to the function
+    read_file_by_path.tool_metadata = {
+        "description": "Read content from a file using relative path (supports subdirectories)",
+        "parameters": {
+            "filepath": {
+                "type": "string",
+                "description": "Relative path to the file (e.g., 'agent/core/secure_agent.py')",
+                "required": True
+            }
+        },
+        "examples": [
+            "read file agent/core/secure_agent.py",
+            "show content of config/models.yaml",
+            "read docs/README.md"
+        ]
+    }
+
     # Return tool functions as dictionary
     return {
         "list_files": list_files,
@@ -272,4 +391,7 @@ def create_file_tools(workspace: Workspace, **fs_kwargs: Any) -> dict[str, Any]:
         "read_file": read_file,
         "write_file": write_file,
         "delete_file": delete_file,
+        "list_files_recursive": list_files_recursive,
+        "find_file_by_name": find_file_by_name,
+        "read_file_by_path": read_file_by_path,
     }

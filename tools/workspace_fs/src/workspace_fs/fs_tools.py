@@ -6,6 +6,9 @@ error handling and security enforcement.
 """
 
 import time
+import os
+from pathlib import Path
+from typing import Optional
 
 from .exceptions import (
     InvalidMode,
@@ -443,6 +446,131 @@ class FileSystemTools:
 
         except Exception as e:
             raise WorkspaceError(f"Failed to generate tree view: {e}") from e
+
+    def list_files_recursive(self) -> list[str]:
+        """
+        List all files in the workspace recursively, including subdirectories.
+
+        Returns files from all subdirectories with relative paths,
+        excluding hidden files, sorted by modification time (newest first).
+
+        Returns:
+            List of relative file paths sorted by modification time.
+
+        Raises:
+            RateLimitError: If rate limit is exceeded.
+            WorkspaceError: If workspace access fails.
+        """
+        self._check_rate_limit()
+
+        try:
+            files_with_mtime = []
+
+            # Walk through all subdirectories
+            for root, dirs, files in os.walk(self._workspace.root):
+                # Filter out hidden directories
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+                
+                for file in files:
+                    # Skip hidden files
+                    if file.startswith('.'):
+                        continue
+                    
+                    full_path = Path(root) / file
+                    try:
+                        mtime = full_path.stat().st_mtime
+                        # Get relative path from workspace root
+                        relative_path = full_path.relative_to(self._workspace.root)
+                        files_with_mtime.append((str(relative_path), mtime))
+                    except (OSError, PermissionError):
+                        # Skip files we can't access
+                        continue
+
+            # Sort by modification time (newest first)
+            files_with_mtime.sort(key=lambda x: x[1], reverse=True)
+
+            return [filepath for filepath, _ in files_with_mtime]
+
+        except Exception as e:
+            raise WorkspaceError(f"Failed to list files recursively: {e}") from e
+
+    def find_file_by_name(self, filename: str) -> Optional[str]:
+        """
+        Find a file by exact name searching recursively in all subdirectories.
+
+        Args:
+            filename: Exact filename to search for (e.g., "secure_agent.py")
+
+        Returns:
+            Relative path to the file if found, None otherwise.
+
+        Raises:
+            RateLimitError: If rate limit is exceeded.
+            WorkspaceError: If workspace access fails.
+        """
+        self._check_rate_limit()
+
+        try:
+            # Walk through all subdirectories
+            for root, dirs, files in os.walk(self._workspace.root):
+                # Filter out hidden directories
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+                
+                if filename in files:
+                    full_path = Path(root) / filename
+                    # Get relative path from workspace root
+                    relative_path = full_path.relative_to(self._workspace.root)
+                    return str(relative_path)
+
+            return None
+
+        except Exception as e:
+            raise WorkspaceError(f"Failed to find file '{filename}': {e}") from e
+
+    def read_file_by_path(self, filepath: str) -> str:
+        """
+        Read content from a file using relative path (supports subdirectories).
+
+        Args:
+            filepath: Relative path to the file (e.g., "agent/core/secure_agent.py")
+
+        Returns:
+            File content as string.
+
+        Raises:
+            FileNotFoundError: If file doesn't exist.
+            WorkspaceError: If file cannot be read.
+        """
+        self._check_rate_limit()
+
+        # Use safe_join which handles relative paths
+        safe_path = self._workspace.safe_join(filepath)
+
+        if not safe_path.exists():
+            raise FileNotFoundError(f"File not found: {filepath}")
+
+        if not safe_path.is_file():
+            raise WorkspaceError(f"Path is not a file: {filepath}")
+
+        # Check file size
+        try:
+            file_size = safe_path.stat().st_size
+            if file_size > self._max_read:
+                raise SizeLimitExceeded(file_size, self._max_read)
+        except OSError as e:
+            raise WorkspaceError(f"Cannot access file '{filepath}': {e}") from e
+
+        # Read file content
+        try:
+            return safe_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # Try with different encoding
+            try:
+                return safe_path.read_text(encoding="latin-1")
+            except Exception as e:
+                raise WorkspaceError(f"Failed to decode file '{filepath}': {e}") from e
+        except Exception as e:
+            raise WorkspaceError(f"Failed to read file '{filepath}': {e}") from e
 
     def __str__(self) -> str:
         """Return string representation of FileSystemTools."""

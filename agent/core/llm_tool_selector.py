@@ -98,6 +98,8 @@ class LLMToolSelector:
         prompt = f"""
 You are an intelligent tool selector for a file system agent. Your task is to analyze a user query and select the most appropriate tool from the available options.
 
+CRITICAL LANGUAGE RULE: ALL of your thinking, reasoning, and analysis must be in ENGLISH ONLY. Do not use Italian or any other language in your internal reasoning process.
+
 USER QUERY: "{user_query}"
 
 AVAILABLE TOOLS:
@@ -108,10 +110,10 @@ CONTEXT:
 
 TASK:
 1. Analyze the user's intent from their query (consider both English and Italian)
-2. Evaluate each available tool's suitability for this intent
+2. Evaluate each available tool's suitability for this intent  
 3. Consider the context and any special requirements
 4. Select the BEST tool for this specific query
-5. Provide confidence level (0.0-1.0) and clear reasoning
+5. Provide confidence level (0.0-1.0) and clear reasoning (IN ENGLISH ONLY)
 
 SPECIAL CONSIDERATIONS:
 - "lista tutti i files e directory" = list all files AND directories (use "list_all")
@@ -120,6 +122,8 @@ SPECIAL CONSIDERATIONS:
 - Consider multilingual queries (English/Italian)
 - Handle ambiguous requests by selecting the most comprehensive appropriate tool
 - If the user wants both files and directories, prefer "list_all"
+
+IMPORTANT: Think and reason in English only. Your analysis and reasoning must be in English regardless of the user's query language.
 
 Please think through this step by step and provide your final recommendation.
 """

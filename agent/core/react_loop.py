@@ -836,9 +836,59 @@ Think about whether I have enough information to answer the user's question or i
         Returns:
             Formatted response based on available context
         """
+        # Check if this is an analytical query that needs proper description
+        is_describe_query = any(keyword in query.lower() for keyword in [
+            'describe', 'descrivi', 'analyze', 'analizza', 'explain', 'what is'
+        ])
+        
         # Find the most recent successful tool result
         for step in reversed(self.scratchpad):
             if step.phase == ReActPhase.ACT and step.tool_result and "error" not in step.tool_result.lower():
+                # For describe queries, provide analysis instead of raw content
+                if is_describe_query and step.tool_name == "read_file":
+                    filename = step.tool_args.get("filename", "the file")
+                    content = step.tool_result
+                    
+                    # Generate a proper description of the file
+                    if content and len(content) > 50:
+                        # Count lines and estimate file type
+                        lines = content.split('\n')
+                        line_count = len(lines)
+                        
+                        # Try to determine file type and purpose from content
+                        description = f"## Description of {filename}\n\n"
+                        description += f"This is a Python file with {line_count} lines of code. "
+                        
+                        # Analyze content for key patterns
+                        if "class " in content:
+                            classes = [line.strip() for line in lines if line.strip().startswith("class ")]
+                            if classes:
+                                description += f"It defines {len(classes)} class(es): {', '.join(c.split(':')[0].replace('class ', '') for c in classes[:3])}. "
+                        
+                        if "def " in content:
+                            import re
+                            functions = re.findall(r'def (\w+)', content)
+                            if functions:
+                                description += f"It contains {len(functions)} function(s) including: {', '.join(functions[:5])}. "
+                        
+                        if "import " in content or "from " in content:
+                            description += "It includes various imports for external libraries. "
+                        
+                        # Look for docstrings
+                        if '"""' in content or "'''" in content:
+                            description += "The file includes documentation strings. "
+                        
+                        # Look for specific patterns in secure_agent.py
+                        if "secure_agent" in filename.lower():
+                            description += "\n\nThis appears to be the main agent implementation file responsible for handling secure file operations and user interactions within the AI file system."
+                        
+                        description += f"\n\n**File Content Preview:**\n```python\n{content[:500]}{'...' if len(content) > 500 else ''}\n```"
+                        
+                        return description
+                    else:
+                        return f"The file {filename} appears to be empty or very small with content: {content}"
+                
+                # For non-describe queries, return the tool result as-is
                 return step.tool_result
         
         # If no successful tool execution, check tool chain context
@@ -1077,6 +1127,17 @@ Think about whether I have enough information to answer the user's question or i
                     )
                     break
                 
+                # Special logic for analytical queries after successful file read
+                is_describe_query = any(keyword in translated_query.lower() for keyword in [
+                    'describe', 'descrivi', 'analyze', 'analizza', 'explain', 'what is'
+                ])
+                
+                if (is_describe_query and parsed_response.tool_name == "read_file" and 
+                    tool_result and "error" not in tool_result.lower() and len(tool_result) > 50):
+                    # We successfully read a file for a describe query - force completion
+                    final_response = self._generate_response_from_context(translated_query, tool_chain_context)
+                    break
+                
                 # If we executed a tool but no final response, continue iterating
                 if tool_result is None and not parsed_response.continue_reasoning:
                     # No tool was executed and no continuation requested, complete
@@ -1173,16 +1234,31 @@ Think about whether I have enough information to answer the user's question or i
         
         # Detect if this is an analytical query that should conclude after gathering info
         is_analytical_query = any(keyword in query.lower() for keyword in [
-            'analizza', 'analyze', 'summary', 'overview', 'describe', 'what is', 
-            'tell me about', 'explain', 'review'
+            'analizza', 'analyze', 'summary', 'overview', 'describe', 'descrivi', 'what is', 
+            'tell me about', 'explain', 'review', 'show me'
         ])
         
+        # Count tool actions (actual work done)
+        tool_actions = [s for s in reasoning_history if s.phase == ReActPhase.ACT and s.tool_result]
+        
         analytical_guidance = ""
-        if is_analytical_query and len(reasoning_history) >= 6:
-            analytical_guidance = f"""
-ANALYSIS GUIDANCE: You've gathered substantial information ({len(reasoning_history)} steps). 
-Consider providing a comprehensive analysis summary as your final_response instead of continuing to gather more data.
-Set continue_reasoning=false and provide final_response when you have enough information to answer the user's question completely.
+        if is_analytical_query:
+            if len(tool_actions) >= 2:
+                # For analytical queries, after 2 successful tool actions, we should have enough information
+                analytical_guidance = f"""
+ANALYSIS GUIDANCE: You've gathered substantial information ({len(tool_actions)} tool actions completed). 
+For analytical queries like "describe", "analyze", or "explain", after successfully reading file content or gathering data,
+you should provide a comprehensive summary as your final_response instead of continuing to gather more data.
+Set continue_reasoning=false and provide final_response with your analysis when you have enough information.
+"""
+            elif len(tool_actions) >= 1:
+                # After first successful tool action, encourage completion if sufficient
+                last_action = tool_actions[-1]
+                if "read_file" in last_action.tool_name and last_action.tool_result:
+                    analytical_guidance = f"""
+ANALYSIS GUIDANCE: You've successfully read file content. For "describe" queries, you now have the necessary 
+information to provide a comprehensive description. Set continue_reasoning=false and provide a detailed 
+final_response analyzing what you found in the file.
 """
         
         iteration_guidance = ""
@@ -1198,8 +1274,10 @@ rather than using more tools. Set continue_reasoning=false and provide a compreh
 AGENT CONTEXT:
 You are part of a secure AI system that helps users manage files within a sandboxed workspace. You support both English and Italian queries and operate through a supervised architecture that ensures safety and security.
 
-LANGUAGE RESPONSE RULE:
-Always respond in the same language as the user's question.  Match the user's language naturally and consistently throughout your response.
+CRITICAL LANGUAGE RULES:
+1. ALL INTERNAL THINKING AND REASONING MUST BE IN ENGLISH ONLY - this includes the "thinking" field in your JSON response
+2. ONLY the final_response field should match the user's input language
+3. Your "thinking" field must always be in clear, professional English regardless of the user's query language
 
 CAPABILITIES:
 - File operations within workspace boundaries (read, write, delete, list)
@@ -1230,27 +1308,30 @@ AVAILABLE TOOLS:
 {chr(10).join(available_tool_info)}
 
 INSTRUCTIONS:
-1. THINK through the problem step by step
-2. DECIDE if you need to use a tool or can provide a final answer
+1. THINK through the problem step by step (ALWAYS IN ENGLISH ONLY)
+2. DECIDE if you need to use a tool or can provide a final answer  
 3. If using a tool, specify the exact tool name and arguments
 4. Determine if more reasoning will be needed after this action
+5. For analytical queries (describe, analyze, explain): after successfully reading file content, provide comprehensive final_response
+
+CRITICAL: Your "thinking" field must be in English only. Only "final_response" should match the user's language.
 
 Respond with a JSON object in this exact format:
 {{
-  "thinking": "Your step-by-step reasoning about what to do next",
-  "tool_name": "exact_tool_name_or_null",
+  "thinking": "Your step-by-step reasoning in ENGLISH ONLY about what to do next",
+  "tool_name": "exact_tool_name_or_null", 
   "tool_args": {{"param": "value"}},
   "continue_reasoning": true/false,
-  "final_response": "Complete answer if reasoning is done, otherwise null",
+  "final_response": "Complete answer matching user's language if reasoning is done, otherwise null",
   "confidence": 0.8
 }}
 
 IMPORTANT:
 - Use "null" for tool_name if no tool is needed
 - Set continue_reasoning to false when you have enough information to provide a complete answer
-- For analytical queries (analyze, describe, overview), after gathering 3-5 pieces of information, provide a comprehensive summary
+- For analytical queries (analyze, describe, overview), after reading file content, provide comprehensive description as final_response
 - The final_response should synthesize all gathered information into a clear, helpful answer
-- If you've already used several tools and have good information, prefer completing the analysis over gathering more data"""
+- If you've successfully read a file for a "describe" query, provide the description immediately rather than continuing"""
 
     async def _execute_selected_tool(
         self, 

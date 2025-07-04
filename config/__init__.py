@@ -10,6 +10,7 @@ __version__ = "0.1.0"
 
 from .model_config import ModelConfig, ModelProvider, ProviderConfig
 from .exceptions import ConfigurationError, ModelNotFoundError, ProviderNotFoundError
+from .env_loader import load_env_for_context, get_env_loader
 
 # Global configuration instance - lazy loaded for efficiency
 _global_config: ModelConfig | None = None
@@ -74,4 +75,6 @@ __all__ = [
     "get_model_config",
     "get_model_for_role", 
     "set_environment",
+    "load_env_for_context",
+    "get_env_loader",
 ]

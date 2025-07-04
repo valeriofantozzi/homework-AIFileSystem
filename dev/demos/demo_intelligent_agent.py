@@ -17,10 +17,10 @@ from agent.core.react_loop import ReActLoop, ReActStep, ReActPhase
 
 
 class IntelligentMCPThinkingTool:
-    """MCP thinking tool che simula ragionamento intelligente senza keyword matching."""
+    """MCP thinking tool that simulates intelligent reasoning without keyword matching."""
     
     async def __call__(self, **kwargs):
-        """Provide intelligent semantic reasoning."""
+        """Provide intelligent semantic reasoning in English only."""
         thought = kwargs.get('thought', '')
         
         if 'USER QUERY:' in thought:
@@ -29,32 +29,32 @@ class IntelligentMCPThinkingTool:
             if query_match:
                 user_query = query_match.group(1).lower()
                 
-                # Ragionamento semantico intelligente
+                # Intelligent semantic reasoning - ALWAYS IN ENGLISH
                 if ('lista' in user_query and 'tutti' in user_query and 
                     'files' in user_query and 'directory' in user_query):
                     return {
-                        "thought": "L'utente vuole vedere TUTTO: files E directory insieme. 'Tutti' indica completezza. La scelta migliore è 'list_all' che mostra entrambi.",
+                        "thought": "The user wants to see EVERYTHING: files AND directories together. 'Tutti' indicates completeness. The best choice is 'list_all' which shows both.",
                         "nextThoughtNeeded": False,
                         "thoughtNumber": 2,
                         "totalThoughts": 2
                     }
                 elif 'directories' in user_query and 'files' not in user_query:
                     return {
-                        "thought": "L'utente vuole solo le directory. Uso 'list_directories'.",
+                        "thought": "The user wants only directories. I'll use 'list_directories'.",
                         "nextThoughtNeeded": False,
                         "thoughtNumber": 1,
                         "totalThoughts": 1
                     }
                 elif 'files' in user_query and 'directories' not in user_query:
                     return {
-                        "thought": "L'utente vuole solo i file. Uso 'list_files'.",
+                        "thought": "The user wants only files. I'll use 'list_files'.",
                         "nextThoughtNeeded": False,
                         "thoughtNumber": 1,
                         "totalThoughts": 1
                     }
         
         return {
-            "thought": "Ragionamento semantico: analizzo l'intent dell'utente e scelgo il tool più appropriato.",
+            "thought": "Semantic reasoning: I'll analyze the user's intent and choose the most appropriate tool.",
             "nextThoughtNeeded": False,
             "thoughtNumber": 1,
             "totalThoughts": 1

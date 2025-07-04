@@ -10,9 +10,28 @@ Follows Clean Architecture with single responsibility for protocol translation.
 import asyncio
 import json
 import sys
+import os
 import logging
 from typing import Any, Dict, List, Optional
 import structlog
+
+# Initialize environment configuration for API key access
+try:
+    from config import load_env_for_context, get_env_loader
+    # Load environment configuration from Docker environment
+    environment = os.getenv('AI_ENVIRONMENT', 'development')
+    load_env_for_context(environment)
+    logger = structlog.get_logger(__name__)
+    logger.info("Environment configuration loaded", environment=environment)
+except Exception as e:
+    # Fallback: use environment variables directly
+    logger = structlog.get_logger(__name__)
+    logger.info("Using environment variables directly", error=str(e))
+    # Ensure we have the basic environment variables we need
+    required_vars = ['WORKSPACE_PATH', 'PYTHONPATH']
+    for var in required_vars:
+        if var not in os.environ:
+            logger.warning(f"Missing environment variable: {var}")
 
 from server.api_mcp.models import (
     InitializeResponse,
@@ -24,9 +43,6 @@ from server.api_mcp.models import (
 )
 from tools.workspace_fs.src.workspace_fs import Workspace
 from tools.crud_tools.src.crud_tools import create_file_tools, answer_question_about_files
-
-# Configure structured logging for stdio mode
-logger = structlog.get_logger(__name__)
 
 
 class StdioMCPServer:
@@ -148,6 +164,20 @@ class StdioMCPServer:
                     "required": ["query"]
                 }
             ),
+            ToolDefinition(
+                name="read_file_by_path",
+                description="Read content from a file using relative path (supports subdirectories)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "filepath": {
+                            "type": "string",
+                            "description": "Relative path to the file (e.g., 'agent/core/secure_agent.py')"
+                        }
+                    },
+                    "required": ["filepath"]
+                }
+            ),
         ]
     
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -176,6 +206,8 @@ class StdioMCPServer:
                 # Special case for async tool - use await
                 query = arguments.get("query", "")
                 result = await answer_question_about_files(self.workspace, query)
+            elif tool_name == "read_file_by_path":
+                result = self.file_tools["read_file_by_path"](arguments["filepath"])
             else:
                 return {
                     "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
