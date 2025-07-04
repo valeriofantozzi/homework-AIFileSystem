@@ -107,24 +107,75 @@ class StdioMCPServer:
                     "required": ["filename"]
                 }
             ),
+            ToolDefinition(
+                name="list_directories",
+                description="List all directories in the workspace",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            ),
+            ToolDefinition(
+                name="list_all",
+                description="List all files and directories (directories marked with '/')",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            ),
+            ToolDefinition(
+                name="list_tree",
+                description="Generate a tree view of the workspace structure",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            ),
+            ToolDefinition(
+                name="answer_question_about_files",
+                description="Analyze files to answer questions about their content",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Question about the files in the workspace"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            ),
         ]
     
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """Execute tool with proper error handling and abstraction."""
         try:
             if tool_name == "list_files":
-                result = self.file_tools.list_files()
+                result = self.file_tools["list_files"]()
             elif tool_name == "read_file":
-                result = self.file_tools.read_file(arguments["filename"])
+                result = self.file_tools["read_file"](arguments["filename"])
             elif tool_name == "write_file":
                 mode = arguments.get("mode", "w")
-                result = self.file_tools.write_file(
+                result = self.file_tools["write_file"](
                     arguments["filename"], 
                     arguments["content"], 
                     mode
                 )
             elif tool_name == "delete_file":
-                result = self.file_tools.delete_file(arguments["filename"])
+                result = self.file_tools["delete_file"](arguments["filename"])
+            elif tool_name == "list_directories":
+                result = self.file_tools["list_directories"]()
+            elif tool_name == "list_all":
+                result = self.file_tools["list_all"]()
+            elif tool_name == "list_tree":
+                result = self.file_tools["tree"]()
+            elif tool_name == "answer_question_about_files":
+                # Special case for async tool - use await
+                query = arguments.get("query", "")
+                result = await answer_question_about_files(self.workspace, query)
             else:
                 return {
                     "content": [{"type": "text", "text": f"Unknown tool: {tool_name}"}],
