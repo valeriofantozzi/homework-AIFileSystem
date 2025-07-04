@@ -68,16 +68,27 @@
   - [x] Configure CORS for web-based MCP clients
   - [x] Add rate limiting and authentication middleware
   - [x] Implement request validation and sanitization
+- [x] **2.5 VSCode stdio MCP server implementation** ⭐ **NEW**
+  - [x] Create `server/stdio_mcp_server.py` for VSCode integration
+  - [x] Implement JSON-RPC over stdin/stdout protocol handling
+  - [x] Add MCP `initialize` handshake with protocol version compliance
+  - [x] Expose all 8 file system tools via stdio interface
+  - [x] Configure `.vscode/mcp.json` for VSCode MCP client integration
+  - [x] Add Docker-based stdio server deployment configuration
+  - [x] Implement comprehensive stdio MCP integration tests
 
 **Status**: ✅ **COMPLETED** (July 4, 2025)
 **Implementation Notes**:
 
-- All automated protocol compliance tests passing
-- MCP server responds correctly to JSON-RPC 2.0 requests with proper MCP protocol format
+- **HTTP API**: All automated protocol compliance tests passing
+- **Stdio Protocol**: MCP server responds correctly to JSON-RPC 2.0 over stdin/stdout
+- **VSCode Integration**: Full stdio MCP server with proper initialize handshake
+- **Dual Protocol Support**: Both HTTP API and stdio protocols implemented
 - Health, metrics, and diagnostics endpoints validated
 - Docker deployment tested and verified with direct volume mounting
-- Comprehensive integration test suite validates all 8 file system tools
-- Client configurations ready for Claude Desktop and Cursor IDE
+- Comprehensive integration test suite validates all 8 file system tools across both protocols
+- Client configurations ready for Claude Desktop, Cursor IDE, and VSCode
+- **Architecture**: High cohesion stdio server with clean protocol translation layer
   **Next Steps**: Ready for Task 4 (Monitoring & Observability)
 
 ### **Task 3 – Production Configuration & Deployment** ✅ **COMPLETED**
@@ -160,9 +171,11 @@
 ## Success Criteria
 
 - [x] MCP server implements all required file system tools with proper JSON-RPC 2.0 compliance
+- [x] **Dual Protocol Support**: HTTP API and stdio protocols both implemented
+- [x] **VSCode Integration**: stdio MCP server with proper initialize handshake
 - [x] Production-ready Docker deployment with health monitoring and metrics
-- [x] Comprehensive test suite validates all endpoints and tool operations
-- [x] MCP configuration manifest ready for client integration
+- [x] Comprehensive test suite validates all endpoints and tool operations across both protocols
+- [x] MCP configuration manifest ready for client integration (Claude, Cursor, VSCode)
 - [ ] MCP server responds correctly to Claude Desktop and Cursor IDE clients
 - [ ] Production deployment supports concurrent users with <200ms response times
 - [ ] Security audit passes with no critical vulnerabilities
@@ -175,12 +188,15 @@
 ### MCP Server Architecture
 
 ```
-MCP Client (Claude/Cursor)
-    ↓ HTTP POST /mcp
-FastAPI Server (server/api_mcp/)
+MCP Clients:
+├── Claude Desktop (HTTP API)
+├── Cursor IDE (HTTP API)
+└── VSCode (stdio protocol)
+    ↓
+Dual Protocol Support:
+├── HTTP: FastAPI Server (server/api_mcp/)
+└── Stdio: JSON-RPC Server (server/stdio_mcp_server.py)
     ↓ DI injection
-SecureAgent (agent/core/)
-    ↓ tool calls
 Workspace Tools (tools/workspace_fs/)
     ↓ audit events
 Monitoring System (observability/)
@@ -210,11 +226,14 @@ Monitoring System (observability/)
 
 **Completed Work**:
 
-- FastAPI MCP server with all file system tools exposed
+- **HTTP MCP Server**: FastAPI server with all file system tools exposed
+- **Stdio MCP Server**: VSCode-compatible JSON-RPC over stdin/stdout protocol
+- **Dual Protocol Support**: Both HTTP API and stdio interfaces implemented
 - Production Docker deployment with health monitoring
-- Comprehensive test suite (standalone, HTTP, MCP protocol integration)
+- Comprehensive test suite (standalone, HTTP, stdio MCP protocol integration)
 - Deployment automation and environment configuration
-- Client integration infrastructure for Claude Desktop and Cursor IDE
+- Client integration infrastructure for Claude Desktop, Cursor IDE, and VSCode
+- **Architecture**: High cohesion stdio server with clean protocol translation layer
 
 **Next Priorities**:
 
