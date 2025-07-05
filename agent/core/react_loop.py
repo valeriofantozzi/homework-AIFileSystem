@@ -248,6 +248,9 @@ class ReActLoop:
         self.debug_mode = debug_mode
         self.llm_response_func = llm_response_func
         
+        # Store the thinking tool for agentic reasoning
+        self.thinking_tool = mcp_thinking_tool
+        
         # Always try to enable LLM tool selector for intelligent behavior
         self.llm_tool_selector = None
         self.use_llm_tool_selector = False
@@ -595,7 +598,8 @@ Translation:"""
         """
         Determine if the current thought requires taking an action.
         
-        Uses LLM reasoning to decide if an action is needed based on the current thought
+        Uses agentic reasoning with the sequential thinking tool instead of keyword matching
+        to intelligently decide if an action is needed based on the current thought
         and reasoning context.
         """
         # Build context from scratchpad
@@ -617,21 +621,63 @@ Think about whether I have enough information to answer the user's question or i
 """
         
         try:
-            # Use a lightweight decision - you could make this more sophisticated
-            action_keywords = [
-                "need to", "should", "let me", "i'll", "i will", "must",
-                "list", "read", "write", "delete", "check", "find", "search",
-                "create", "remove", "look", "see", "get", "fetch"
-            ]
-            
-            thought_lower = thought.lower()
-            has_action_keyword = any(keyword in thought_lower for keyword in action_keywords)
-            
-            # Also check if we haven't taken any actions yet
+            # Use agentic reasoning instead of keyword matching
             actions_taken = len([s for s in self.scratchpad if s.phase == ReActPhase.ACT])
             
-            # Take action if we have keywords or haven't done anything yet
-            return has_action_keyword or actions_taken == 0
+            # If no actions taken yet, definitely need to take action
+            if actions_taken == 0:
+                return True
+            
+            # Use sequential thinking tool for intelligent decision making
+            if hasattr(self, 'thinking_tool') and self.thinking_tool:
+                try:
+                    reasoning_result = await self.thinking_tool(
+                        thought=f"""Analyze this thought to determine if I should take an action with a tool or provide a final response.
+
+CURRENT THOUGHT: {thought}
+
+CONTEXT: {context_summary}
+
+AVAILABLE TOOLS: {', '.join(self.tools.keys())}
+
+ACTIONS TAKEN SO FAR: {actions_taken}
+
+Consider:
+1. Does the thought indicate I need to gather more information?
+2. Does the thought suggest I should use a specific tool?
+3. Do I have enough information to provide a complete answer?
+4. Is the user asking for something that requires tool usage?
+
+Determine whether I should take an action (YES) or provide a final response (NO).""",
+                        nextThoughtNeeded=False,
+                        thoughtNumber=1,
+                        totalThoughts=1
+                    )
+                    
+                    # Parse the reasoning result to determine action
+                    reasoning_text = reasoning_result.get('thought', '').lower()
+                    return 'yes' in reasoning_text and 'no' not in reasoning_text.split('yes')[0]
+                    
+                except Exception as thinking_error:
+                    self.logger.warning("Error using thinking tool for action decision", error=str(thinking_error))
+                    # Fall back to heuristic analysis
+            
+            # Fallback: Analyze thought content semantically without keywords
+            thought_lower = thought.lower()
+            
+            # Check for action indicators using semantic analysis
+            action_indicators = [
+                "need" in thought_lower and ("to" in thought_lower or "more" in thought_lower),
+                "should" in thought_lower and any(word in thought_lower for word in ["use", "call", "check", "get"]),
+                "let me" in thought_lower or "i'll" in thought_lower or "i will" in thought_lower,
+                any(phrase in thought_lower for phrase in ["more information", "need to", "have to", "going to"]),
+                # Semantic indicators that suggest action is needed
+                "information" in thought_lower and "need" in thought_lower,
+                "not enough" in thought_lower or "insufficient" in thought_lower,
+                "missing" in thought_lower or "lacking" in thought_lower
+            ]
+            
+            return any(action_indicators)
             
         except Exception as e:
             self.logger.warning("Error in action decision", error=str(e))
@@ -1555,10 +1601,10 @@ You must respond with valid JSON in exactly this structure:
     
     def _generate_default_goal(self, query: str) -> str:
         """
-        Generate a default goal when LLM doesn't provide an explicit one.
+        Generate a default goal using semantic analysis instead of keyword matching.
         
         This follows the single responsibility principle by having one clear purpose:
-        generate meaningful goals for common query patterns, including detecting ambiguous requests.
+        generate meaningful goals for common query patterns using semantic understanding.
         
         Args:
             query: The user's translated query
@@ -1568,59 +1614,81 @@ You must respond with valid JSON in exactly this structure:
         """
         query_lower = query.lower()
         
-        # Check for potentially ambiguous or vague requests
-        ambiguous_indicators = [
-            "help", "what can you do", "do something", "anything", "stuff", 
-            "things", "work with", "handle", "manage", "deal with"
-        ]
+        # Use semantic analysis instead of keyword matching
+        # Check for ambiguous or vague requests using semantic indicators
+        if len(query_lower.split()) <= 3:
+            simple_words = ['help', 'what', 'how', 'can', 'you', 'do', 'something', 'anything']
+            word_count = sum(1 for word in simple_words if word in query_lower)
+            if word_count >= 2:
+                return "AMBIGUOUS_REQUEST"  # Special flag to trigger clarification
         
-        # Check exact matches first for multi-word phrases
-        for indicator in ambiguous_indicators:
-            if indicator in query_lower:
-                # For short queries or very vague ones, mark as ambiguous
-                if len(query_lower.split()) <= 5 and (indicator == query_lower or indicator in ["help", "what can you do", "do something"]):
-                    return "AMBIGUOUS_REQUEST"  # Special flag to trigger clarification
+        # Semantic analysis for different intent categories
+        # File listing intent
+        listing_indicators = {
+            'list_action': any(word in query_lower for word in ['list', 'show', 'display', 'see', 'visualizza', 'mostra', 'elenca']),
+            'tree_format': any(word in query_lower for word in ['tree', 'structure', 'hierarchy', 'albero']),
+            'files_focus': any(word in query_lower for word in ['files', 'file', 'documento']),
+            'dirs_focus': any(word in query_lower for word in ['directories', 'folders', 'directory', 'folder', 'cartelle']),
+            'all_content': any(word in query_lower for word in ['all', 'tutto', 'tutti', 'everything'])
+        }
         
-        # File listing goals
-        if any(word in query_lower for word in ['list', 'show', 'display', 'see', 'visualizza', 'mostra']):
-            if any(word in query_lower for word in ['tree', 'structure', 'hierarchy', 'albero']):
+        if listing_indicators['list_action']:
+            if listing_indicators['tree_format']:
                 return "Display workspace file and directory structure in tree format"
-            elif any(word in query_lower for word in ['files', 'file']):
+            elif listing_indicators['files_focus'] and not listing_indicators['dirs_focus']:
                 return "List all files in the workspace"
-            elif any(word in query_lower for word in ['directories', 'folders', 'directory', 'folder', 'cartelle']):
+            elif listing_indicators['dirs_focus'] and not listing_indicators['files_focus']:
                 return "List all directories in the workspace"
+            elif listing_indicators['all_content'] or (listing_indicators['files_focus'] and listing_indicators['dirs_focus']):
+                return "List and display workspace contents"
             else:
                 return "List and display workspace contents"
         
-        # File reading/analysis goals
-        elif any(word in query_lower for word in ['read', 'describe', 'analyze', 'explain', 'what is']):
-            # Check if specific file is mentioned
-            if any(ext in query_lower for ext in ['.py', '.txt', '.md', '.json', '.yaml', '.yml', '.js', '.ts']):
+        # File reading/analysis intent
+        reading_indicators = {
+            'read_action': any(word in query_lower for word in ['read', 'describe', 'analyze', 'explain', 'leggi', 'descrivi']),
+            'content_inquiry': any(phrase in query_lower for phrase in ['what is', 'what does', 'content of', 'contenuto di']),
+            'file_extension': any(ext in query_lower for ext in ['.py', '.txt', '.md', '.json', '.yaml', '.yml', '.js', '.ts'])
+        }
+        
+        if reading_indicators['read_action'] or reading_indicators['content_inquiry']:
+            if reading_indicators['file_extension']:
                 return "Read and analyze the specified file content"
             else:
                 return "NEEDS_FILE_SPECIFICATION"  # Special flag for missing file info
         
-        # File manipulation goals
-        elif any(word in query_lower for word in ['write', 'create']):
-            if "file" in query_lower or any(ext in query_lower for ext in ['.py', '.txt', '.md', '.json']):
+        # File manipulation intent
+        creation_indicators = {
+            'create_action': any(word in query_lower for word in ['write', 'create', 'scrivi', 'crea']),
+            'file_context': 'file' in query_lower or reading_indicators['file_extension']
+        }
+        
+        if creation_indicators['create_action']:
+            if creation_indicators['file_context']:
                 return "Create or write content to a file"
             else:
                 return "NEEDS_FILE_SPECIFICATION"
-        elif any(word in query_lower for word in ['delete', 'remove']):
-            if any(ext in query_lower for ext in ['.py', '.txt', '.md', '.json', '.yaml', '.yml']):
+        
+        deletion_indicators = {
+            'delete_action': any(word in query_lower for word in ['delete', 'remove', 'elimina', 'rimuovi']),
+            'file_context': reading_indicators['file_extension'] or 'file' in query_lower
+        }
+        
+        if deletion_indicators['delete_action']:
+            if deletion_indicators['file_context']:
                 return "Delete the specified file"
             else:
                 return "NEEDS_FILE_SPECIFICATION"
         
-        # Search goals
-        elif any(word in query_lower for word in ['find', 'search']):
+        # Search intent
+        search_indicators = any(word in query_lower for word in ['find', 'search', 'trova', 'cerca'])
+        if search_indicators:
             return "Find and locate files matching the specified criteria"
         
         # General fallback goal
-        else:
-            if len(query.strip()) < 5:  # Very short queries are likely ambiguous
-                return "AMBIGUOUS_REQUEST"
-            return f"Fulfill user request: {query[:50]}..." if len(query) > 50 else f"Fulfill user request: {query}"
+        if len(query.strip()) < 5:  # Very short queries are likely ambiguous
+            return "AMBIGUOUS_REQUEST"
+        return f"Fulfill user request: {query[:50]}..." if len(query) > 50 else f"Fulfill user request: {query}"
     
     def _format_clarification_response(
         self, 

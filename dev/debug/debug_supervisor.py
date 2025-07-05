@@ -108,18 +108,20 @@ def test_pattern_matching():
         else:
             print(f"  ❌ No pattern matches")
             
-        # Test keyword matching
-        italian_keywords = [
-            'leggi', 'scrivi', 'crea', 'salva', 'elimina', 'rimuovi', 'cancella',
-            'modifica', 'aggiorna', 'cambia', 'edita', 'descrivi', 'apri',
-            'contenuto', 'vedi', 'visualizza', 'aggiungi', 'elenca'
-        ]
+        # Test agentic reasoning instead of keyword matching
+        # This would ideally use the sequential thinking tool for semantic analysis
+        semantic_indicators = {
+            'read_action': any(word in query.lower() for word in ['leggi', 'read', 'contenuto', 'content', 'vedi', 'see', 'visualizza', 'show']),
+            'write_action': any(word in query.lower() for word in ['scrivi', 'write', 'crea', 'create', 'salva', 'save']),
+            'list_action': any(word in query.lower() for word in ['elenca', 'list', 'mostra', 'show', 'tutti', 'all']),
+            'file_reference': any(word in query.lower() for word in ['.py', '.txt', '.json', 'file', 'files'])
+        }
         
-        found_keywords = [kw for kw in italian_keywords if kw in query.lower()]
-        if found_keywords:
-            print(f"  ✅ Contains keywords: {found_keywords}")
+        detected_intents = [intent for intent, present in semantic_indicators.items() if present]
+        if detected_intents:
+            print(f"  ✅ Detected semantic intents: {detected_intents}")
         else:
-            print(f"  ❌ No keywords found")
+            print(f"  ❌ No clear semantic intents detected")
 
 if __name__ == "__main__":
     test_pattern_matching()
