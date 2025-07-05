@@ -4,6 +4,8 @@ ReAct reasoning loop implementation.
 This module implements the ReAct (Reasoning-Action-Observation) pattern for
 autonomous agent reasoning. The loop enables the agent to think through problems
 step by step, take actions with tools, and observe results to continue reasoning.
+
+Enhanced with goal-oriented reasoning for better response alignment.
 """
 
 import json
@@ -18,6 +20,9 @@ from config.model_config import ModelProvider
 # Import diagnostics for tool usage tracking
 from agent.diagnostics import log_tool_usage
 # Import the LLM tool selector for intelligent tool selection
+from agent.core.llm_tool_selector import LLMToolSelector, ToolSelectionResult
+# Import goal compliance validator for response validation
+from agent.core.goal_validator import GoalComplianceValidator, GoalComplianceResult
 from agent.core.llm_tool_selector import LLMToolSelector, ToolSelectionResult
 
 
@@ -39,6 +44,7 @@ class ReActStep:
     tool_args: Optional[Dict[str, Any]] = None
     tool_result: Optional[str] = None
     timestamp: Optional[str] = None
+    goal: Optional[str] = None  # Goal for this step if provided by LLM
 
 
 @dataclass
@@ -86,16 +92,26 @@ class ReActResult:
     success: bool = True
     iterations: int = 0
     tool_chain_context: Optional[ToolChainContext] = None
+    goal: Optional[str] = None  # The goal that was generated for this request
+    goal_compliance: Optional[GoalComplianceResult] = None  # Compliance validation result
 
 
 @dataclass
 class ConsolidatedReActResponse:
-    """Structured response from a single LLM call containing all ReAct phases."""
+    """
+    Structured response from a single LLM call containing all ReAct phases.
+    
+    Enhanced with goal-oriented reasoning for better alignment between
+    user requests and agent responses.
+    """
     thinking: str
+    goal: Optional[str] = None  # Explicit objective generated for the user request
     tool_name: Optional[str] = None
     tool_args: Optional[Dict[str, Any]] = None
     continue_reasoning: bool = True
     final_response: Optional[str] = None
+    goal_compliance_check: Optional[str] = None  # Verification that response achieves the goal
+    clarification_question: Optional[str] = None  # Question to ask user when more info needed
     confidence: float = 0.8
     
     @classmethod
@@ -126,10 +142,13 @@ class ConsolidatedReActResponse:
             data = json.loads(cleaned_json)
             return cls(
                 thinking=data.get("thinking", "No thinking provided"),
+                goal=data.get("goal"),  # Extract goal from JSON response
                 tool_name=data.get("tool_name"),
                 tool_args=data.get("tool_args", {}),
                 continue_reasoning=data.get("continue_reasoning", True),
                 final_response=data.get("final_response"),
+                goal_compliance_check=data.get("goal_compliance_check"),  # Extract compliance check
+                clarification_question=data.get("clarification_question"),  # Extract clarification question
                 confidence=data.get("confidence", 0.8)
             )
         except (json.JSONDecodeError, KeyError) as e:
@@ -150,13 +169,37 @@ class ConsolidatedReActResponse:
                 if tool_match:
                     tool_name = tool_match.group(1)
             
+            # Look for goal information in malformed JSON
+            goal = None
+            if "goal" in json_str:
+                goal_match = re.search(r'"goal":\s*"([^"]+)"', json_str)
+                if goal_match:
+                    goal = goal_match.group(1)
+            
+            # Look for goal compliance check
+            goal_compliance_check = None
+            if "goal_compliance_check" in json_str:
+                compliance_match = re.search(r'"goal_compliance_check":\s*"([^"]+)"', json_str)
+                if compliance_match:
+                    goal_compliance_check = compliance_match.group(1)
+            
+            # Look for clarification question in malformed JSON
+            clarification_question = None
+            if "clarification_question" in json_str:
+                clarification_match = re.search(r'"clarification_question":\s*"([^"]+)"', json_str)
+                if clarification_match:
+                    clarification_question = clarification_match.group(1)
+            
             # Fallback to text parsing if JSON fails
             return cls(
                 thinking=thinking_text,
+                goal=goal,  # Include extracted goal
                 tool_name=tool_name,
                 tool_args={},
                 continue_reasoning=bool(tool_name),  # Continue if we found a tool
-                final_response=None  # Don't provide a final response, let the system handle it properly
+                final_response=None,  # Don't provide a final response, let the system handle it properly
+                goal_compliance_check=goal_compliance_check,  # Include compliance check
+                clarification_question=clarification_question  # Include clarification question
             )
 
 
@@ -1079,16 +1122,31 @@ Think about whether I have enough information to answer the user's question or i
                         final_response=None
                     )
                 
-                # Record the thinking step
+                # Record the thinking step with goal if provided
                 thinking_step = ReActStep(
                     phase=ReActPhase.THINK,
                     step_number=len(self.scratchpad) + 1,
-                    content=parsed_response.thinking
+                    content=parsed_response.thinking,
+                    goal=parsed_response.goal  # Include goal in the step
                 )
                 self.scratchpad.append(thinking_step)
                 
                 if self.debug_mode:
-                    self.logger.debug("THINK phase", content=parsed_response.thinking)
+                    self.logger.debug("THINK phase", 
+                                    content=parsed_response.thinking,
+                                    goal=parsed_response.goal or "No goal provided",
+                                    clarification_question=parsed_response.clarification_question or "No clarification needed")
+                
+                # Handle clarification requests - agent needs more information
+                if parsed_response.clarification_question:
+                    # Agent is asking for clarification - this should be the final response
+                    clarification_response = self._format_clarification_response(
+                        parsed_response.clarification_question,
+                        parsed_response.goal,
+                        original_query
+                    )
+                    final_response = clarification_response
+                    break
                 
                 # Execute tool if one was selected
                 tool_result = None
@@ -1149,13 +1207,76 @@ Think about whether I have enough information to answer the user's question or i
                 final_response = self._generate_response_from_context(translated_query, tool_chain_context)
                 self.logger.warning("Max iterations reached, generating response from context")
             
+            # Extract goal with priority: first from parsed_response, then from reasoning steps
+            goal = None
+            goal_compliance_check = None
+            
+            # Priority 1: Get goal from the current parsed response
+            if 'parsed_response' in locals() and hasattr(parsed_response, 'goal') and parsed_response.goal:
+                goal = parsed_response.goal
+                goal_compliance_check = getattr(parsed_response, 'goal_compliance_check', None)
+            else:
+                # Priority 2: Extract goal from the most recent thinking step that had one
+                for step in reversed(self.scratchpad):
+                    if hasattr(step, 'goal') and step.goal:
+                        goal = step.goal
+                        break
+                
+                # If no goal found, generate a default goal based on the query
+                if not goal:
+                    default_goal = self._generate_default_goal(translated_query)
+                    
+                    # Handle special cases that indicate need for clarification
+                    if default_goal in ["AMBIGUOUS_REQUEST", "NEEDS_FILE_SPECIFICATION"]:
+                        # Generate clarification response
+                        if default_goal == "AMBIGUOUS_REQUEST":
+                            clarification = "Your request seems quite general. Could you please specify what you'd like me to do with the files in your workspace?"
+                        elif default_goal == "NEEDS_FILE_SPECIFICATION":
+                            clarification = "I understand you want to work with a file, but could you please specify which file you're referring to?"
+                        
+                        # Create clarification response
+                        final_response = self._format_clarification_response(
+                            clarification,
+                            f"Help with: {translated_query}",
+                            original_query
+                        )
+                        goal = f"Request clarification for: {translated_query}"
+                    else:
+                        goal = default_goal
+            
+            # Validate goal compliance if we have a goal
+            goal_compliance = None
+            if goal:
+                goal_compliance = GoalComplianceValidator.validate_compliance(
+                    goal=goal,
+                    response=final_response,
+                    tools_used=self._get_tools_used(),
+                    context={
+                        'original_query': original_query,
+                        'translated_query': translated_query,
+                        'iterations': self.iteration_count
+                    }
+                )
+                
+                # Log compliance result in debug mode
+                if self.debug_mode:
+                    self.logger.debug(
+                        "Goal compliance validation",
+                        goal=goal,
+                        compliance_level=goal_compliance.compliance_level.value,
+                        confidence_score=goal_compliance.confidence_score,
+                        explanation=goal_compliance.explanation
+                    )
+            
             result = ReActResult(
                 response=final_response,
                 tools_used=self._get_tools_used(),
                 reasoning_steps=self._format_reasoning_steps(),
                 success=True,
                 iterations=self.iteration_count,
-                tool_chain_context=tool_chain_context
+                tool_chain_context=tool_chain_context,
+                goal=goal,
+                goal_compliance=goal_compliance
             )
             
             self.logger.info(
@@ -1164,7 +1285,10 @@ Think about whether I have enough information to answer the user's question or i
                 iterations=self.iteration_count,
                 tools_used=result.tools_used,
                 original_query=original_query,
-                translated_query=translated_query
+                translated_query=translated_query,
+                goal_achieved=goal,
+                goal_compliance_level=goal_compliance.compliance_level.value if goal_compliance else "Not validated",
+                clarification_requested="Yes" if "Clarification Needed" in final_response else "No"
             )
             
             return result
@@ -1301,6 +1425,13 @@ PREVIOUS REASONING STEPS:
 
 CONTEXT FROM TOOLS:
 {context_summary}
+COMMON CLARIFICATION SCENARIOS:
+- User says "help" or "what can you do" → Ask what specific task they need help with
+- User says "read file" without specifying which → Ask which file they want to read
+- User says "delete something" → Ask which specific file to delete
+- User request is too vague → Ask for more specific details
+- Multiple files could match → Ask which specific file they mean
+
 {analytical_guidance}
 {iteration_guidance}
 
@@ -1308,30 +1439,38 @@ AVAILABLE TOOLS:
 {chr(10).join(available_tool_info)}
 
 INSTRUCTIONS:
-1. THINK through the problem step by step (ALWAYS IN ENGLISH ONLY)
-2. DECIDE if you need to use a tool or can provide a final answer  
-3. If using a tool, specify the exact tool name and arguments
-4. Determine if more reasoning will be needed after this action
-5. For analytical queries (describe, analyze, explain): after successfully reading file content, provide comprehensive final_response
+1. **MANDATORY: GENERATE A CLEAR GOAL** - Always start by defining what you want to achieve for this user request
+2. **ANALYZE AMBIGUITY** - If the request is unclear or ambiguous, generate a clarification question instead of proceeding
+3. THINK through the problem step by step (ALWAYS IN ENGLISH ONLY)
+4. DECIDE if you need to use a tool, ask for clarification, or can provide a final answer  
+5. If using a tool, specify the exact tool name and arguments
+6. Determine if more reasoning will be needed after this action
+7. **MANDATORY: VALIDATE GOAL ACHIEVEMENT** - Before providing final_response, CHECK if your response achieves the stated goal
+8. For analytical queries (describe, analyze, explain): after successfully reading file content, provide comprehensive final_response instead of continuing to gather more data
 
-CRITICAL: Your "thinking" field must be in English only. Only "final_response" should match the user's language.
-
-Respond with a JSON object in this exact format:
-{{
-  "thinking": "Your step-by-step reasoning in ENGLISH ONLY about what to do next",
-  "tool_name": "exact_tool_name_or_null", 
-  "tool_args": {{"param": "value"}},
-  "continue_reasoning": true/false,
-  "final_response": "Complete answer matching user's language if reasoning is done, otherwise null",
-  "confidence": 0.8
-}}
-
-IMPORTANT:
+CRITICAL REQUIREMENTS:
+- The "goal" field is MANDATORY - never leave it null or empty
+- The "goal_compliance_check" field is MANDATORY when providing final_response
+- Use "clarification_question" when the request is ambiguous, unclear, or missing critical information
 - Use "null" for tool_name if no tool is needed
-- Set continue_reasoning to false when you have enough information to provide a complete answer
+- Set continue_reasoning to false when you have enough information to provide a complete answer OR when asking for clarification
 - For analytical queries (analyze, describe, overview), after reading file content, provide comprehensive description as final_response
 - The final_response should synthesize all gathered information into a clear, helpful answer
-- If you've successfully read a file for a "describe" query, provide the description immediately rather than continuing"""
+- If you've successfully read a file for a "describe" query, provide the description immediately rather than continuing
+
+RESPONSE FORMAT:
+You must respond with valid JSON in exactly this structure:
+{{
+    "thinking": "Your step-by-step reasoning (ALWAYS IN ENGLISH)",
+    "goal": "Clear statement of what you want to achieve",
+    "tool_name": "exact_tool_name" or null,
+    "tool_args": {{"parameter": "value"}} or {{}},
+    "continue_reasoning": true or false,
+    "final_response": "Complete answer for user" or null,
+    "goal_compliance_check": "How this response achieves the goal" or null,
+    "clarification_question": "Question to ask user for more info" or null,
+    "confidence": 0.8
+}}"""
 
     async def _execute_selected_tool(
         self, 
@@ -1413,3 +1552,107 @@ IMPORTANT:
             error_msg = f"Tool execution failed: {str(e)}"
             self.logger.error("Tool execution failed", tool=tool_name, error=str(e))
             return error_msg
+    
+    def _generate_default_goal(self, query: str) -> str:
+        """
+        Generate a default goal when LLM doesn't provide an explicit one.
+        
+        This follows the single responsibility principle by having one clear purpose:
+        generate meaningful goals for common query patterns, including detecting ambiguous requests.
+        
+        Args:
+            query: The user's translated query
+            
+        Returns:
+            A clear, actionable goal for the request, or a flag for ambiguous requests
+        """
+        query_lower = query.lower()
+        
+        # Check for potentially ambiguous or vague requests
+        ambiguous_indicators = [
+            "help", "what can you do", "do something", "anything", "stuff", 
+            "things", "work with", "handle", "manage", "deal with"
+        ]
+        
+        # Check exact matches first for multi-word phrases
+        for indicator in ambiguous_indicators:
+            if indicator in query_lower:
+                # For short queries or very vague ones, mark as ambiguous
+                if len(query_lower.split()) <= 5 and (indicator == query_lower or indicator in ["help", "what can you do", "do something"]):
+                    return "AMBIGUOUS_REQUEST"  # Special flag to trigger clarification
+        
+        # File listing goals
+        if any(word in query_lower for word in ['list', 'show', 'display', 'see', 'visualizza', 'mostra']):
+            if any(word in query_lower for word in ['tree', 'structure', 'hierarchy', 'albero']):
+                return "Display workspace file and directory structure in tree format"
+            elif any(word in query_lower for word in ['files', 'file']):
+                return "List all files in the workspace"
+            elif any(word in query_lower for word in ['directories', 'folders', 'directory', 'folder', 'cartelle']):
+                return "List all directories in the workspace"
+            else:
+                return "List and display workspace contents"
+        
+        # File reading/analysis goals
+        elif any(word in query_lower for word in ['read', 'describe', 'analyze', 'explain', 'what is']):
+            # Check if specific file is mentioned
+            if any(ext in query_lower for ext in ['.py', '.txt', '.md', '.json', '.yaml', '.yml', '.js', '.ts']):
+                return "Read and analyze the specified file content"
+            else:
+                return "NEEDS_FILE_SPECIFICATION"  # Special flag for missing file info
+        
+        # File manipulation goals
+        elif any(word in query_lower for word in ['write', 'create']):
+            if "file" in query_lower or any(ext in query_lower for ext in ['.py', '.txt', '.md', '.json']):
+                return "Create or write content to a file"
+            else:
+                return "NEEDS_FILE_SPECIFICATION"
+        elif any(word in query_lower for word in ['delete', 'remove']):
+            if any(ext in query_lower for ext in ['.py', '.txt', '.md', '.json', '.yaml', '.yml']):
+                return "Delete the specified file"
+            else:
+                return "NEEDS_FILE_SPECIFICATION"
+        
+        # Search goals
+        elif any(word in query_lower for word in ['find', 'search']):
+            return "Find and locate files matching the specified criteria"
+        
+        # General fallback goal
+        else:
+            if len(query.strip()) < 5:  # Very short queries are likely ambiguous
+                return "AMBIGUOUS_REQUEST"
+            return f"Fulfill user request: {query[:50]}..." if len(query) > 50 else f"Fulfill user request: {query}"
+    
+    def _format_clarification_response(
+        self, 
+        clarification_question: str, 
+        goal: Optional[str], 
+        original_query: str
+    ) -> str:
+        """
+        Format a clarification request for the user.
+        
+        This follows the single responsibility principle by having one clear purpose:
+        format user-friendly clarification requests when agent needs more information.
+        
+        Args:
+            clarification_question: The question to ask the user
+            goal: The tentative goal if one was generated
+            original_query: The user's original query
+            
+        Returns:
+            Formatted clarification response for the user
+        """
+        # Start with the clarification question
+        response = f"❓ **Clarification Needed**\n\n{clarification_question}\n\n"
+        
+        # Add context about what we understood
+        if goal:
+            response += f"💡 **What I understand so far:**\nI'm trying to: {goal}\n\n"
+        
+        # Add the original query for reference
+        response += f"📝 **Your original request:** \"{original_query}\"\n\n"
+        
+        # Add helpful suggestions
+        response += "💬 **Please provide more details so I can help you better.**"
+        
+        return response

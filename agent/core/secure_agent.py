@@ -251,7 +251,12 @@ class ConversationContext(BaseModel):
 
 
 class AgentResponse(BaseModel):
-    """Structured response from the agent."""
+    """
+    Structured response from the agent.
+    
+    Enhanced with goal-oriented information for better transparency
+    and response quality validation.
+    """
     
     conversation_id: str
     response: str
@@ -259,6 +264,8 @@ class AgentResponse(BaseModel):
     reasoning_steps: Optional[List[Dict[str, Any]]] = None
     success: bool = True
     error_message: Optional[str] = None
+    goal: Optional[str] = None  # The goal that was generated for this request
+    goal_compliance_summary: Optional[str] = None  # Human-readable compliance summary
 
 
 class SecureAgent:
@@ -522,7 +529,9 @@ Please interpret the user's response in the context of the previous conversation
                 response=result.response,
                 tools_used=result.tools_used,
                 reasoning_steps=result.reasoning_steps if self.debug_mode else None,
-                success=True
+                success=True,
+                goal=result.goal,
+                goal_compliance_summary=self._format_goal_compliance_summary(result.goal_compliance)
             )
             
             # Store interaction in memory if memory tools are available
@@ -1135,3 +1144,37 @@ Please interpret the user's response in the context of the previous conversation
             enhanced_tools[tool_name] = create_enhanced_wrapper(tool_name, tool_func)
         
         return enhanced_tools
+
+    def _format_goal_compliance_summary(self, goal_compliance: Optional[Any]) -> str:
+        """
+        Format goal compliance result into a readable summary.
+        
+        This follows the single responsibility principle by having one clear purpose:
+        format compliance results for user display.
+        
+        Args:
+            goal_compliance: GoalComplianceResult or None
+            
+        Returns:
+            Formatted compliance summary string
+        """
+        if not goal_compliance:
+            return "Goal compliance not evaluated"
+        
+        # Format compliance level with emoji
+        level_map = {
+            "fully_compliant": "✅ Fully Compliant",
+            "partially_compliant": "⚠️ Partially Compliant", 
+            "non_compliant": "❌ Non-Compliant",
+            "unclear": "❓ Unclear"
+        }
+        
+        level_text = level_map.get(goal_compliance.compliance_level.value, "❓ Unknown")
+        confidence = f"{goal_compliance.confidence_score:.1%}"
+        
+        summary = f"{level_text} ({confidence} confidence)"
+        
+        if hasattr(goal_compliance, 'explanation') and goal_compliance.explanation:
+            summary += f": {goal_compliance.explanation}"
+        
+        return summary
