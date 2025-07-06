@@ -108,3 +108,5 @@ mock_responses/
 secrets.json
 api_keys.txt
 credentials.json
+
+DELIVERY_CHECKLIST.md
