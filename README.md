@@ -90,7 +90,7 @@ docker compose up --build
 ### 🧪 Run Tests
 
 ```bash
-pytest -q
+poetry run pytest -q
 ```
 
 ---
