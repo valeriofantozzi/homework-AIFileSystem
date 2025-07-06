@@ -59,11 +59,7 @@ poetry run python config/manage_env.py list
 ## 3. ⚡ Quick Start (CLI Chat)
 
 ```bash
-# Inside the Poetry shell (simple)
-poetry run python -m chat_interface.cli_chat.chat
-
-# Advanced run (custom workspace + env + debug)
-poetry run python -m chat_interface.cli_chat.chat --workspace ./sandbox --env development -debug
+poetry run python -m chat_interface.cli_chat.chat --workspace . --env development -debug
 ```
 
 You’ll see a prompt similar to:
