@@ -87,43 +87,6 @@ Use `pytest` and include a `tests/` directory with coverage of both success and 
 
 ---
 
-## 🔧 **Environment & Model Configuration**
-
-This project implements a flexible configuration system for managing API keys and model assignments across different environments and use cases:
-
-### Environment Management
-
-- **Multiple Environment Support**: Development, testing, production, and local environments
-- **Secure API Key Management**: Environment-specific `.env` files with template-based setup
-- **Provider Flexibility**: Support for OpenAI, Anthropic, Gemini, Groq, and local models
-- **Role-Based Model Assignment**: Different models for agent, supervisor, file analysis, and chat roles
-
-### Quick Setup
-
-```bash
-# Set up environment configuration
-python config/manage_env.py setup --env development
-
-# Validate your configuration
-python config/manage_env.py validate --env development
-
-# List all environments
-python config/manage_env.py list
-
-# See configuration in action
-python config/demo_env_system.py
-```
-
-### Configuration Files
-
-- `.env.template` - Template for quick local setup (in `config/env/`)
-- `.env.{environment}.template` - Environment-specific templates (in `config/env/`)
-- `config/models.yaml` - Model definitions and capabilities
-- `config/manage_env.py` - CLI tool for environment management
-- `config/ENV_SETUP.md` - Comprehensive setup documentation
-
----
-
 ## 📦 **Deliverables**
 
 Please submit a zip file or GitHub repo that includes a project like:
@@ -135,11 +98,6 @@ Please submit a zip file or GitHub repo that includes a project like:
 ├── chat_interface/      # CLI, notebook, or UI interface
 ├── server/              # MCP server implementation (also ok as sub-folder in agent folder)
 ├── tests/               # Pytest test cases
-├── config/              # Environment and model configuration system
-│   ├── env/             # Environment template files
-│   ├── manage_env.py    # CLI tool for environment management
-│   ├── demo_env_system.py # Configuration system demonstration
-│   └── ENV_SETUP.md     # Environment setup documentation
 ├── mcp_config.json      # Manifest/config for MCP clients
 ├── requirements.txt     # Python dependencies (or pyproject.toml with poetry.lock or uv.lock)
 └── README.md            # Instructions
