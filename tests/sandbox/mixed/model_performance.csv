@@ -1,0 +1,6 @@
+model_name,dataset,train_accuracy,val_accuracy,test_accuracy,training_time_hours,model_size_mb
+text_classifier_v1,news_articles,0.89,0.87,0.85,12.5,450
+text_classifier_v2,news_articles,0.94,0.92,0.90,18.2,650
+sentiment_lstm_v1,movie_reviews,0.82,0.80,0.79,8.3,120
+sentiment_lstm_v2,movie_reviews,0.87,0.85,0.84,10.1,140
+language_detector,multilingual,0.96,0.95,0.94,15.7,380

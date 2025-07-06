@@ -1,0 +1,54 @@
+# API Documentation
+
+## Authentication
+All API requests require an API key in the header:
+```
+Authorization: Bearer YOUR_API_KEY
+```
+
+## Endpoints
+
+### GET /api/v1/models
+Returns list of available models.
+
+**Response:**
+```json
+{
+  "models": [
+    {"name": "text_classifier", "status": "active"},
+    {"name": "sentiment_analyzer", "status": "active"}
+  ]
+}
+```
+
+### POST /api/v1/predict
+Submit text for prediction.
+
+**Request Body:**
+```json
+{
+  "text": "This is sample text to analyze",
+  "model": "text_classifier"
+}
+```
+
+**Response:**
+```json
+{
+  "prediction": "positive",
+  "confidence": 0.94,
+  "processing_time_ms": 45
+}
+```
+
+### GET /api/v1/health
+Health check endpoint.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "uptime": "5d 12h 30m",
+  "models_loaded": 2
+}
+```

@@ -269,26 +269,26 @@ class MCPServer:
             )
 
 
-# Global server instance
-mcp_server: Optional[MCPServer] = None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup/shutdown."""
-    global mcp_server
-    
+
     # Startup
-    workspace_path = Path.cwd() / "workspace"  # Default workspace
+    import os
+    workspace_env = os.environ.get("WORKSPACE_PATH")
+    if workspace_env:
+        workspace_path = Path(workspace_env)
+    else:
+        workspace_path = Path.cwd() / "workspace"  # Default workspace
     workspace_path.mkdir(exist_ok=True)
-    
-    mcp_server = MCPServer(str(workspace_path))
-    await mcp_server.initialize()
-    
+
+    app.state.mcp_server = MCPServer(str(workspace_path))
+    await app.state.mcp_server.initialize()
+
     logger.info("MCP server started", workspace_path=str(workspace_path))
-    
+
     yield
-    
+
     # Shutdown
     logger.info("MCP server shutting down")
 
@@ -334,14 +334,17 @@ async def metrics_middleware(request: Request, call_next):
     return response
 
 
+from fastapi import Request as FastAPIRequest
+
 @app.post("/mcp", response_model=MCPResponse)
-async def mcp_endpoint(request: MCPRequest) -> MCPResponse:
+async def mcp_endpoint(request: MCPRequest, fastapi_request: FastAPIRequest) -> MCPResponse:
     """
     Main MCP endpoint for JSON-RPC 2.0 communication.
-    
+
     This endpoint handles all MCP protocol requests including tool discovery
     and execution while maintaining security constraints.
     """
+    mcp_server = getattr(fastapi_request.app.state, "mcp_server", None)
     if not mcp_server:
         return MCPResponse(
             id=request.id,
@@ -350,7 +353,7 @@ async def mcp_endpoint(request: MCPRequest) -> MCPResponse:
                 message="Server not initialized"
             )
         )
-    
+
     try:
         # Handle different MCP methods
         if request.method == "initialize":
@@ -359,14 +362,14 @@ async def mcp_endpoint(request: MCPRequest) -> MCPResponse:
                 id=request.id,
                 result=InitializeResponse().model_dump()
             )
-        
+
         elif request.method == "tools/list":
             tools = mcp_server.get_available_tools()
             return MCPResponse(
                 id=request.id,
                 result=ToolsListResponse(tools=tools).model_dump()
             )
-        
+
         elif request.method == "tools/call":
             if not request.params:
                 return MCPResponse(
@@ -376,25 +379,25 @@ async def mcp_endpoint(request: MCPRequest) -> MCPResponse:
                         message="Missing tool call parameters"
                     )
                 )
-            
+
             tool_request = ToolCallRequest(**request.params)
             result = await mcp_server.execute_tool(
                 tool_request.name,
                 tool_request.arguments
             )
-            
+
             return MCPResponse(
                 id=request.id,
                 result=result.model_dump()
             )
-        
+
         elif request.method == "resources/list":
             # Return empty resources list (not implemented in this phase)
             return MCPResponse(
                 id=request.id,
                 result=ResourcesListResponse(resources=[]).model_dump()
             )
-        
+
         else:
             return MCPResponse(
                 id=request.id,
@@ -416,10 +419,10 @@ async def mcp_endpoint(request: MCPRequest) -> MCPResponse:
 
 
 @app.get("/health", response_model=HealthStatus)
-async def health_check() -> HealthStatus:
+async def health_check(fastapi_request: FastAPIRequest) -> HealthStatus:
     """Health check endpoint for service monitoring."""
     uptime = time.time() - SERVER_METRICS["start_time"]
-    
+    mcp_server = getattr(fastapi_request.app.state, "mcp_server", None)
     return HealthStatus(
         status="healthy" if mcp_server else "unhealthy",
         version="1.0.0",
@@ -444,11 +447,12 @@ async def metrics_endpoint() -> MetricsResponse:
 
 
 @app.get("/diagnostics", response_model=DiagnosticsResponse)
-async def diagnostics_endpoint() -> DiagnosticsResponse:
+async def diagnostics_endpoint(fastapi_request: FastAPIRequest) -> DiagnosticsResponse:
     """Diagnostics endpoint for comprehensive system status."""
     try:
         system_metrics = get_usage_statistics()
-        
+        mcp_server = getattr(fastapi_request.app.state, "mcp_server", None)
+
         workspace_info = {}
         if mcp_server:
             try:
@@ -460,12 +464,12 @@ async def diagnostics_endpoint() -> DiagnosticsResponse:
                 }
             except Exception as e:
                 workspace_info = {"error": str(e)}
-        
+
         server_status = {
             "initialized": mcp_server is not None,
             "workspace_tools_available": len(mcp_server.file_tools) if mcp_server else 0
         }
-        
+
         return DiagnosticsResponse(
             system_info=system_metrics,
             agent_status=server_status,
@@ -478,7 +482,7 @@ async def diagnostics_endpoint() -> DiagnosticsResponse:
                 "uptime": time.time() - SERVER_METRICS["start_time"]
             }
         )
-    
+
     except Exception as e:
         logger.error("Error generating diagnostics", error=str(e))
         raise HTTPException(

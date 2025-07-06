@@ -1,0 +1,29 @@
+{
+  "project": {
+    "name": "ML Pipeline System",
+    "version": "2.1.0",
+    "description": "Advanced machine learning pipeline for data processing"
+  },
+  "models": [
+    {
+      "name": "text_classifier",
+      "type": "transformer",
+      "accuracy": 0.94,
+      "last_trained": "2024-01-15"
+    },
+    {
+      "name": "sentiment_analyzer", 
+      "type": "lstm",
+      "accuracy": 0.87,
+      "last_trained": "2024-01-10"
+    }
+  ],
+  "infrastructure": {
+    "cloud_provider": "AWS",
+    "regions": ["us-east-1", "eu-west-1"],
+    "compute": {
+      "training": "p3.8xlarge",
+      "inference": "c5.xlarge"
+    }
+  }
+}

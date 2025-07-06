@@ -1,0 +1,10 @@
+version,component,feature,status,priority,assignee,due_date
+1.0.0,Core,User Authentication,Completed,High,Alice Johnson,2024-01-15
+1.0.0,Core,File Upload,Completed,High,Bob Smith,2024-01-20
+1.0.0,API,REST Endpoints,Completed,High,Charlie Brown,2024-01-25
+1.1.0,ML,Model Training,In Progress,High,Diana Prince,2024-02-10
+1.1.0,ML,Inference Pipeline,Planned,Medium,Eve Davis,2024-02-15
+1.1.0,UI,Dashboard Updates,In Progress,Medium,Frank Miller,2024-02-20
+1.2.0,Security,Authentication 2FA,Planned,High,Alice Johnson,2024-03-01
+1.2.0,Performance,Caching Layer,Planned,Medium,Bob Smith,2024-03-15
+1.2.0,Analytics,Usage Tracking,Planned,Low,Charlie Brown,2024-03-30

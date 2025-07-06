@@ -1,0 +1,8 @@
+employee_id,name,department,performance_score,salary,hire_date
+E001,John Smith,Engineering,92,75000,2022-01-15
+E002,Sarah Johnson,Marketing,88,65000,2021-06-10
+E003,Mike Chen,Engineering,95,80000,2020-11-03
+E004,Lisa Brown,HR,85,55000,2023-02-20
+E005,David Wilson,Sales,90,70000,2021-09-14
+E006,Emma Davis,Engineering,87,72000,2022-08-05
+E007,Tom Rodriguez,Marketing,91,68000,2020-12-01

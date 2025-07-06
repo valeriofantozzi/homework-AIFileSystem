@@ -1,0 +1,25 @@
+TODO List for ML Project
+
+## High Priority
+- [ ] Fix memory leak in data preprocessing module
+- [ ] Implement model versioning system
+- [ ] Add comprehensive logging to inference service
+- [ ] Optimize transformer model for faster inference
+
+## Medium Priority  
+- [ ] Create automated testing pipeline
+- [ ] Implement A/B testing framework
+- [ ] Add support for custom model architectures
+- [ ] Enhance monitoring dashboards
+
+## Low Priority
+- [ ] Documentation improvements
+- [ ] Code refactoring for better maintainability
+- [ ] Performance benchmarking against competitors
+- [ ] Explore new ML architectures
+
+## Completed
+- [x] Initial model training pipeline
+- [x] Basic API endpoints
+- [x] Docker containerization
+- [x] CI/CD setup with GitHub Actions

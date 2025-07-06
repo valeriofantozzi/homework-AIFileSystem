@@ -1,0 +1,35 @@
+{
+  "test_suite": {
+    "name": "AI File System Agent Tests",
+    "version": "1.0.0",
+    "environment": "testing"
+  },
+  "test_configuration": {
+    "timeout_seconds": 30,
+    "max_file_size_mb": 10,
+    "allowed_file_types": [".txt", ".md", ".json", ".csv", ".py", ".yml", ".yaml"],
+    "workspace_isolation": true
+  },
+  "test_data": {
+    "synthetic_employees": 7,
+    "ml_models": 5,
+    "config_files": 4,
+    "log_entries": 9,
+    "code_files": 2
+  },
+  "expected_capabilities": [
+    "list_files",
+    "read_file", 
+    "write_file",
+    "delete_file",
+    "answer_question_about_files",
+    "multi_step_reasoning",
+    "security_filtering",
+    "error_handling"
+  ],
+  "performance_thresholds": {
+    "max_response_time_seconds": 15,
+    "min_success_rate": 0.8,
+    "max_memory_usage_mb": 500
+  }
+}
