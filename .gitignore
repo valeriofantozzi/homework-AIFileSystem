@@ -1,13 +1,8 @@
 # Environment files with sensitive data (now in config/)
 .env
-config/.env
-config/.env.local
-config/.env.development
-config/.env.testing
-config/.env.production
+config/.env*
 
-# Keep templates in config/env/ for documentation
-!config/env/.env*.template
+
 
 # Python
 __pycache__/
@@ -109,3 +104,8 @@ api_keys.txt
 credentials.json
 
 DELIVERY_CHECKLIST.md
+
+
+
+# Keep templates in config/env/ for documentation
+!config/env/.env*.template
