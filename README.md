@@ -66,8 +66,12 @@ logs/             📝  Rotating runtime logs
 # Install deps
 poetry install && poetry shell
 
-# Chat locally
-python -m chat_interface.cli_chat.chat
+# Create and validate .env
+poetry run python config/manage_env.py create
+poetry run python config/manage_env.py validate
+
+# Run the CLI chat interface
+poetry run python -m chat_interface.cli_chat.chat
 ```
 
 ### 🌐 Run the MCP Server
