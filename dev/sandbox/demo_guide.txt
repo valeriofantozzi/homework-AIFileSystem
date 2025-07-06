@@ -1,2 +1,0 @@
-This is a demo file created by following the usage guide steps!
-This line was added by the modification demo.

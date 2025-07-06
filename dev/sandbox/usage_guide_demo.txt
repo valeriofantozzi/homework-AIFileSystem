@@ -1,5 +1,0 @@
-This file was created during the usage guide demo.
-It demonstrates the file creation capabilities of the AI File System Agent.
-
-Created on: 2025-07-02
-Purpose: Following usage guide steps
